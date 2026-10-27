@@ -1,0 +1,32 @@
+{
+  "name": "com.hawkes.net",
+  "version": "0.5.0",
+  "displayName": "Hawkes Net",
+  "description": "Multiplayer for Unity games on Hawkes Net (https://net.hawkesgen.com): shared rooms by area (HawkesNetLobby: live and test rooms, shards when full, rejoining), drop-in avatars (HawkesNetAvatars), and rooms with messages, poses, peers, the host and a shared clock (HawkesNet.Join). WebGL builds run Hawkes Net's web SDK in the page; the Editor and desktop builds join the same rooms with a managed client. Players in the background show as away, and an away host hands the room on.",
+  "unity": "2021.3",
+  "author": {
+    "name": "Hawkes Gen",
+    "url": "https://net.hawkesgen.com"
+  },
+  "documentationUrl": "https://github.com/jgriffith3433/hawkesnet-unity#readme",
+  "changelogUrl": "https://github.com/jgriffith3433/hawkesnet-unity/blob/main/Packages/com.hawkes.net/CHANGELOG.md",
+  "keywords": [
+    "multiplayer",
+    "networking",
+    "webgl",
+    "relay",
+    "webrtc",
+    "hawkes",
+    "editor",
+    "standalone"
+  ],
+  "samples": [
+    {
+      "displayName": "Avatars",
+      "description": "One script: a capsule you walk with WASD and everyone else in the room, through HawkesNetAvatars.",
+      "path": "Samples~/Avatars"
+    }
+  ],
+  "license": "MIT",
+  "licensesUrl": "https://github.com/jgriffith3433/hawkesnet-unity/blob/main/LICENSE"
+}

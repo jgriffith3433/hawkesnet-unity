@@ -1,0 +1,21 @@
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Mm]emoryCaptures/
+*.csproj
+*.sln
+*.user
+.vs/
+.vscode/
+.idea/
+/Assets/_Dev/Output/
+/Assets/_Dev/Output.meta
+*.unitypackage
+
+# The managed test
+DevTools/ManagedTest/bin/
+DevTools/ManagedTest/obj/
