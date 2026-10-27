@@ -3,8 +3,8 @@
 The Asset Store takes a `.unitypackage` of an `Assets/` folder (uploading a UPM package directly is early access only).
 The package's source of truth stays `Packages/com.hawkes.net`; the upload is made from it.
 
-1. **Make the draft** (once, J): Publisher Portal > Packages > Create package, name **Hawkes Net**, category Tools >
-   Network. Note its draft id here.
+1. **The draft** (J made it, 2026-10-26): **hawkes-net**, https://publisher.unity.com/packages/1534184/edit/upload
+   (category Tools > Network).
 2. **Build the upload:** `python DevTools/make_unitypackage.py HawkesNet.unitypackage` (the package as `Assets/HawkesNet`,
    GUIDs kept, the Avatars sample in `Assets/HawkesNet/Samples/Avatars`).
 3. **Validate:** open this project in Unity 6000.3.7f1, import `HawkesNet.unitypackage` into it (Assets > Import Package),
