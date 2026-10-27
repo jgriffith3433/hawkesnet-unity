@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.1 (2026-10-27)
+
+- **Staging sites play on their own Hawkes Net.** In a WebGL build the page's `window.HAWKES_NET_ENDPOINT` (an origin)
+  is used before https://net.hawkesgen.com for joins, the SDK file, background play and counts. Hawkes Studio sets it on
+  beta sites, so a game's beta plays on beta Hawkes Net and its live site on the real one, with no change to the game.
+  An `endpoint` or `sdkUrl` you set yourself still wins (the live address counts as unset: scenes save the default).
+
 ## 0.5.0 (2026-10-26)
 
 - **The Editor and desktop builds join too.** Outside WebGL a managed client (`HawkesNetClient`: .NET WebSocket and

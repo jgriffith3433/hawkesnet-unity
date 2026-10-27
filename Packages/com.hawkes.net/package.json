@@ -1,6 +1,6 @@
 {
   "name": "com.hawkes.net",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "displayName": "Hawkes Net",
   "description": "Multiplayer for Unity games on Hawkes Net (https://net.hawkesgen.com): shared rooms by area (HawkesNetLobby: live and test rooms, shards when full, rejoining), drop-in avatars (HawkesNetAvatars), and rooms with messages, poses, peers, the host and a shared clock (HawkesNet.Join). WebGL builds run Hawkes Net's web SDK in the page; the Editor and desktop builds join the same rooms with a managed client. Players in the background show as away, and an away host hands the room on.",
   "unity": "2021.3",

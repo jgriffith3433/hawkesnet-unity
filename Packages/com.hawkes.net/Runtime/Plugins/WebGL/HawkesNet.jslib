@@ -15,10 +15,15 @@ mergeInto(LibraryManager.library, {
     var who = function (p) { return p ? { peer: p.id || '', name: p.name || '', ord: p.ord || 0, away: !!p.away } : { peer: '', name: '', ord: 0, away: false }; };
     // poses: peer -> { p, y, at, e (the extra values as JSON) }; changed: the peers whose pose changed since the last read.
     var slot = S.rooms[handle] = { net: null, poses: {}, changed: {}, dirty: false, gone: false, extraKeys: [] };
-    var sdk = o.sdkUrl || 'https://net.hawkesgen.com/sdk/hawkes-net@1.mjs';
+    // The Hawkes Net this page uses: one the game names, else the page's window.HAWKES_NET_ENDPOINT (Hawkes Studio sets it on
+    // beta sites: beta Hawkes Net), else https://net.hawkesgen.com. The live address counts as unset (scenes save the default).
+    var LIVE = 'https://net.hawkesgen.com', ORIGIN = /^https?:\/\/[a-z0-9.-]+(:\d+)?$/i;
+    var pageNet = (typeof window !== 'undefined' && ORIGIN.test(String(window.HAWKES_NET_ENDPOINT || ''))) ? window.HAWKES_NET_ENDPOINT : '';
+    var endpoint = (o.endpoint && o.endpoint.replace(/\/+$/, '') !== LIVE) ? o.endpoint.replace(/\/+$/, '') : (pageNet || LIVE);
+    var sdk = (o.sdkUrl && o.sdkUrl !== LIVE + '/sdk/hawkes-net@1.mjs') ? o.sdkUrl : endpoint + '/sdk/hawkes-net@1.mjs';
     var opts = { name: o.name || undefined, transport: o.transport || 'auto', role: o.role || 'player', log: o.log !== false };
     if (o.project) opts.project = o.project;
-    if (o.endpoint) opts.endpoint = o.endpoint;
+    opts.endpoint = endpoint;
     if (o.config) opts.config = o.config;
     if (o.leaveOnHide === false) opts.leaveOnHide = false;
     if (o.ticketUrl) {
@@ -167,7 +172,12 @@ mergeInto(LibraryManager.library, {
       try { if (l.runIter) l.runIter(l.func); else l.func(); }
       catch (e) { if (e !== 'unwind' && !(e && e.name === 'ExitStatus')) console.error('[HawkesNet] background step:', e); }
     };
-    var sdk = UTF8ToString(sdkPtr) || 'https://net.hawkesgen.com/sdk/hawkes-net@1.mjs';
+    // The Hawkes Net this page uses: one the game names, else the page's window.HAWKES_NET_ENDPOINT (Hawkes Studio sets it on
+    // beta sites: beta Hawkes Net), else https://net.hawkesgen.com. The live address counts as unset (scenes save the default).
+    var LIVE = 'https://net.hawkesgen.com', ORIGIN = /^https?:\/\/[a-z0-9.-]+(:\d+)?$/i;
+    var pageNet = (typeof window !== 'undefined' && ORIGIN.test(String(window.HAWKES_NET_ENDPOINT || ''))) ? window.HAWKES_NET_ENDPOINT : '';
+    var asked = UTF8ToString(sdkPtr);
+    var sdk = (asked && asked !== LIVE + '/sdk/hawkes-net@1.mjs') ? asked : (pageNet || LIVE) + '/sdk/hawkes-net@1.mjs';
     var load;
     try { load = (new Function('u', 'return import(u)'))(sdk); } catch (e) { load = Promise.reject(e); }
     load.then(function (m) {
@@ -191,7 +201,12 @@ mergeInto(LibraryManager.library, {
     var receiver = UTF8ToString(receiverPtr);
     var answer = function (x) { x.id = id; try { SendMessage(receiver, 'OnNetCount', JSON.stringify(x)); } catch (err) {} };
     try {
-      var url = (UTF8ToString(endpointPtr) || 'https://net.hawkesgen.com') + '/v1/net/counts?project=' + encodeURIComponent(UTF8ToString(projectPtr)) + '&rooms=' + encodeURIComponent(UTF8ToString(roomsPtr));
+      // The Hawkes Net this page uses: one the game names, else the page's window.HAWKES_NET_ENDPOINT (Hawkes Studio sets it on
+      // beta sites: beta Hawkes Net), else https://net.hawkesgen.com. The live address counts as unset (scenes save the default).
+      var LIVE = 'https://net.hawkesgen.com', ORIGIN = /^https?:\/\/[a-z0-9.-]+(:\d+)?$/i;
+      var pageNet = (typeof window !== 'undefined' && ORIGIN.test(String(window.HAWKES_NET_ENDPOINT || ''))) ? window.HAWKES_NET_ENDPOINT : '';
+      var named = UTF8ToString(endpointPtr).replace(/\/+$/, '');
+      var url = ((named && named !== LIVE) ? named : (pageNet || LIVE)) + '/v1/net/counts?project=' + encodeURIComponent(UTF8ToString(projectPtr)) + '&rooms=' + encodeURIComponent(UTF8ToString(roomsPtr));
       fetch(url).then(function (r) { return r.json().then(function (b) { return { ok: r.ok, b: b }; }); })
         .then(function (x) { answer(x.ok ? { ok: true, rooms: x.b.rooms || {} } : { ok: false, error: String((x.b && x.b.error) || 'refused') }); })
         .catch(function (e) { answer({ ok: false, error: String((e && e.message) || e) }); });
