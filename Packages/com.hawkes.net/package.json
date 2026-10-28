@@ -1,12 +1,12 @@
 {
   "name": "com.hawkes.net",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "displayName": "Hawkes Net",
-  "description": "Multiplayer for Unity games on Hawkes Net (https://net.hawkesgen.com): shared rooms by area (HawkesNetLobby: live and test rooms, shards when full, rejoining), drop-in avatars (HawkesNetAvatars), and rooms with messages, poses, peers, the host and a shared clock (HawkesNet.Join). WebGL builds run Hawkes Net's web SDK in the page; the Editor and desktop builds join the same rooms with a managed client. Players in the background show as away, and an away host hands the room on.",
+  "description": "Multiplayer for Unity games on Hawkes Net (https://net.hawkesgen.ai): shared rooms by area (HawkesNetLobby: live and test rooms, shards when full, rejoining), drop-in avatars (HawkesNetAvatars), and rooms with messages, poses, peers, the host and a shared clock (HawkesNet.Join). WebGL builds run Hawkes Net's web SDK in the page; the Editor and desktop builds join the same rooms with a managed client. Players in the background show as away, and an away host hands the room on.",
   "unity": "2021.3",
   "author": {
     "name": "Hawkes Gen",
-    "url": "https://net.hawkesgen.com"
+    "url": "https://net.hawkesgen.ai"
   },
   "documentationUrl": "https://github.com/jgriffith3433/hawkesnet-unity#readme",
   "changelogUrl": "https://github.com/jgriffith3433/hawkesnet-unity/blob/main/Packages/com.hawkes.net/CHANGELOG.md",

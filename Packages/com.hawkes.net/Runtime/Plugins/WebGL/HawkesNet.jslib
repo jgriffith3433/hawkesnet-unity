@@ -16,18 +16,18 @@ mergeInto(LibraryManager.library, {
     // poses: peer -> { p, y, at, e (the extra values as JSON) }; changed: the peers whose pose changed since the last read.
     var slot = S.rooms[handle] = { net: null, poses: {}, changed: {}, dirty: false, gone: false, extraKeys: [] };
     // The Hawkes Net this page uses: one the game names, else the page's window.HAWKES_NET_ENDPOINT (Hawkes Studio sets it on
-    // beta sites: beta Hawkes Net), else https://net.hawkesgen.com. The live address counts as unset (scenes save the default).
-    var LIVE = 'https://net.hawkesgen.com', ORIGIN = /^https?:\/\/[a-z0-9.-]+(:\d+)?$/i;
+    // beta sites: beta Hawkes Net), else https://net.hawkesgen.ai. The live address counts as unset (scenes save the default).
+    var LIVE = 'https://net.hawkesgen.ai', OLD = 'https://net.hawkesgen.com', ORIGIN = /^https?:\/\/[a-z0-9.-]+(:\d+)?$/i;
     var pageNet = (typeof window !== 'undefined' && ORIGIN.test(String(window.HAWKES_NET_ENDPOINT || ''))) ? window.HAWKES_NET_ENDPOINT : '';
-    var endpoint = (o.endpoint && o.endpoint.replace(/\/+$/, '') !== LIVE) ? o.endpoint.replace(/\/+$/, '') : (pageNet || LIVE);
-    var sdk = (o.sdkUrl && o.sdkUrl !== LIVE + '/sdk/hawkes-net@1.mjs') ? o.sdkUrl : endpoint + '/sdk/hawkes-net@1.mjs';
+    var endpoint = (o.endpoint && o.endpoint.replace(/\/+$/, '') !== LIVE && o.endpoint.replace(/\/+$/, '') !== OLD) ? o.endpoint.replace(/\/+$/, '') : (pageNet || LIVE);
+    var sdk = (o.sdkUrl && o.sdkUrl !== LIVE + '/sdk/hawkes-net@1.mjs' && o.sdkUrl !== OLD + '/sdk/hawkes-net@1.mjs') ? o.sdkUrl : endpoint + '/sdk/hawkes-net@1.mjs';
     var opts = { name: o.name || undefined, transport: o.transport || 'auto', role: o.role || 'player', log: o.log !== false };
     if (o.project) opts.project = o.project;
     opts.endpoint = endpoint;
     if (o.config) opts.config = o.config;
     if (o.leaveOnHide === false) opts.leaveOnHide = false;
     if (o.ticketUrl) {
-      // The game's own server hands out tickets (it asks hawkesgen.com with its API key): POST { room, name } -> Gen's answer.
+      // The game's own server hands out tickets (it asks hawkesgen.ai with its API key): POST { room, name } -> Gen's answer.
       opts.ticket = function () {
         return fetch(o.ticketUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: o.ticketCredentials ? 'include' : 'same-origin', body: JSON.stringify({ room: room, name: o.name || null }) })
           .then(function (r) { if (!r.ok) throw new Error('ticket refused (' + r.status + ')'); return r.json(); });
@@ -173,11 +173,11 @@ mergeInto(LibraryManager.library, {
       catch (e) { if (e !== 'unwind' && !(e && e.name === 'ExitStatus')) console.error('[HawkesNet] background step:', e); }
     };
     // The Hawkes Net this page uses: one the game names, else the page's window.HAWKES_NET_ENDPOINT (Hawkes Studio sets it on
-    // beta sites: beta Hawkes Net), else https://net.hawkesgen.com. The live address counts as unset (scenes save the default).
-    var LIVE = 'https://net.hawkesgen.com', ORIGIN = /^https?:\/\/[a-z0-9.-]+(:\d+)?$/i;
+    // beta sites: beta Hawkes Net), else https://net.hawkesgen.ai. The live address counts as unset (scenes save the default).
+    var LIVE = 'https://net.hawkesgen.ai', OLD = 'https://net.hawkesgen.com', ORIGIN = /^https?:\/\/[a-z0-9.-]+(:\d+)?$/i;
     var pageNet = (typeof window !== 'undefined' && ORIGIN.test(String(window.HAWKES_NET_ENDPOINT || ''))) ? window.HAWKES_NET_ENDPOINT : '';
     var asked = UTF8ToString(sdkPtr);
-    var sdk = (asked && asked !== LIVE + '/sdk/hawkes-net@1.mjs') ? asked : (pageNet || LIVE) + '/sdk/hawkes-net@1.mjs';
+    var sdk = (asked && asked !== LIVE + '/sdk/hawkes-net@1.mjs' && asked !== OLD + '/sdk/hawkes-net@1.mjs') ? asked : (pageNet || LIVE) + '/sdk/hawkes-net@1.mjs';
     var load;
     try { load = (new Function('u', 'return import(u)'))(sdk); } catch (e) { load = Promise.reject(e); }
     load.then(function (m) {
@@ -202,11 +202,11 @@ mergeInto(LibraryManager.library, {
     var answer = function (x) { x.id = id; try { SendMessage(receiver, 'OnNetCount', JSON.stringify(x)); } catch (err) {} };
     try {
       // The Hawkes Net this page uses: one the game names, else the page's window.HAWKES_NET_ENDPOINT (Hawkes Studio sets it on
-      // beta sites: beta Hawkes Net), else https://net.hawkesgen.com. The live address counts as unset (scenes save the default).
-      var LIVE = 'https://net.hawkesgen.com', ORIGIN = /^https?:\/\/[a-z0-9.-]+(:\d+)?$/i;
+      // beta sites: beta Hawkes Net), else https://net.hawkesgen.ai. The live address counts as unset (scenes save the default).
+      var LIVE = 'https://net.hawkesgen.ai', OLD = 'https://net.hawkesgen.com', ORIGIN = /^https?:\/\/[a-z0-9.-]+(:\d+)?$/i;
       var pageNet = (typeof window !== 'undefined' && ORIGIN.test(String(window.HAWKES_NET_ENDPOINT || ''))) ? window.HAWKES_NET_ENDPOINT : '';
       var named = UTF8ToString(endpointPtr).replace(/\/+$/, '');
-      var url = ((named && named !== LIVE) ? named : (pageNet || LIVE)) + '/v1/net/counts?project=' + encodeURIComponent(UTF8ToString(projectPtr)) + '&rooms=' + encodeURIComponent(UTF8ToString(roomsPtr));
+      var url = ((named && named !== LIVE && named !== OLD) ? named : (pageNet || LIVE)) + '/v1/net/counts?project=' + encodeURIComponent(UTF8ToString(projectPtr)) + '&rooms=' + encodeURIComponent(UTF8ToString(roomsPtr));
       fetch(url).then(function (r) { return r.json().then(function (b) { return { ok: r.ok, b: b }; }); })
         .then(function (x) { answer(x.ok ? { ok: true, rooms: x.b.rooms || {} } : { ok: false, error: String((x.b && x.b.error) || 'refused') }); })
         .catch(function (e) { answer({ ok: false, error: String((e && e.message) || e) }); });

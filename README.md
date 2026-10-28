@@ -1,6 +1,6 @@
 # Hawkes Net for Unity
 
-Multiplayer for Unity games on **[Hawkes Net](https://net.hawkesgen.com)**: shared rooms by area, avatars, messages, a
+Multiplayer for Unity games on **[Hawkes Net](https://net.hawkesgen.ai)**: shared rooms by area, avatars, messages, a
 shared clock, players marked away when their game is in the background, and a host that hands the room on. WebGL builds
 run Hawkes Net's web SDK in the page; the Editor and desktop builds join the same rooms with a managed client.
 
@@ -10,8 +10,8 @@ run Hawkes Net's web SDK in the page; the Editor and desktop builds join the sam
 https://github.com/jgriffith3433/hawkesnet-unity.git?path=/Packages/com.hawkes.net#v0.5.1
 ```
 
-or download `com.hawkes.net.tgz` from [net.hawkesgen.com](https://net.hawkesgen.com) (Add package from tarball), or get
-it from the Unity Asset Store. Then make a free account and a project at [net.hawkesgen.com](https://net.hawkesgen.com)
+or download `com.hawkes.net.tgz` from [net.hawkesgen.ai](https://net.hawkesgen.ai) (Add package from tarball), or get
+it from the Unity Asset Store. Then make a free account and a project at [net.hawkesgen.ai](https://net.hawkesgen.ai)
 and read [the package's README](Packages/com.hawkes.net/README.md).
 
 ```csharp
@@ -33,6 +33,6 @@ lobby.Join("lobby");
 | `PUBLISHING.md`, `LISTING.md` | Uploading to the Asset Store, and the listing's text |
 
 The Unity project here (6000.3.7f1) is what the package is tested and uploaded from; the package supports 2021.3+.
-The WebGL bridge's tests run against the web SDK in the [hawkesnet](https://net.hawkesgen.com) service's repo.
+The WebGL bridge's tests run against the web SDK in the [hawkesnet](https://net.hawkesgen.ai) service's repo.
 
 License: [MIT](LICENSE).

@@ -4,7 +4,7 @@
 // events and pose lists the WebGL bridge does, so the room, the lobby and the avatars work the same everywhere.
 // No UnityEngine here (it is tested with plain dotnet).
 //
-// Tickets: a ticketUrl (your server asks hawkesgen.com with your key), a key (servers, bots, tests: never ship one in a
+// Tickets: a ticketUrl (your server asks hawkesgen.ai with your key), a key (servers, bots, tests: never ship one in a
 // game), or, with neither, the localhost door: the Editor joins its project's test rooms (t-...) with no key.
 using System;
 using System.Collections.Concurrent;
@@ -21,7 +21,7 @@ namespace Hawkes
     /// <summary>What a managed room needs to join (HawkesNetOptions' fields, without Unity).</summary>
     public sealed class HawkesNetClientOptions
     {
-        public string project = "", name = "", role = "player", endpoint = "https://net.hawkesgen.com", ticketUrl = "", key = "", sub = "";
+        public string project = "", name = "", role = "player", endpoint = "https://net.hawkesgen.ai", ticketUrl = "", key = "", sub = "";
         /// <summary>The room's shape if this join creates it, as JSON (or empty).</summary>
         public string configJson = "";
         public bool ticketCredentials;
@@ -62,7 +62,8 @@ namespace Hawkes
             this.handle = handle;
             this.room = room;
             o = options ?? new HawkesNetClientOptions();
-            if (string.IsNullOrEmpty(o.endpoint)) o.endpoint = "https://net.hawkesgen.com";
+            // Scenes saved before 0.6.0 hold the old live address, now gone: it means the default.
+            if (string.IsNullOrEmpty(o.endpoint) || o.endpoint.TrimEnd('/') == "https://net.hawkesgen.com") o.endpoint = "https://net.hawkesgen.ai";
             if (string.IsNullOrEmpty(o.sub)) o.sub = Guid.NewGuid().ToString("N").Substring(0, 24);
         }
 

@@ -9,7 +9,7 @@ namespace Hawkes.Samples
     /// </summary>
     public sealed class HawkesNetAvatarsSample : MonoBehaviour
     {
-        [Tooltip("Your account's project (usr_...), from https://net.hawkesgen.com.")]
+        [Tooltip("Your account's project (usr_...), from https://net.hawkesgen.ai.")]
         public string Project = "";
         [Tooltip("Your game's own host names (mygame.com): there the rooms are live, anywhere else test rooms.")]
         public string[] LiveHosts = new string[0];

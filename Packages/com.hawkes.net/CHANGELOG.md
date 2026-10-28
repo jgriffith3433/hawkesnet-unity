@@ -1,9 +1,15 @@
 # Changelog
 
+## 0.6.0 (2026-10-28)
+
+- **Hawkes Net is at https://net.hawkesgen.ai** (hawkesgen.com is gone). The default endpoint, the SDK file and counts use it.
+  Scenes saved with the old address (https://net.hawkesgen.com, which Unity stored as the default) count as unset, so
+  they reach the new one without being opened again; a server of your own still wins.
+
 ## 0.5.1 (2026-10-27)
 
 - **Staging sites play on their own Hawkes Net.** In a WebGL build the page's `window.HAWKES_NET_ENDPOINT` (an origin)
-  is used before https://net.hawkesgen.com for joins, the SDK file, background play and counts. Hawkes Studio sets it on
+  is used before https://net.hawkesgen.ai for joins, the SDK file, background play and counts. Hawkes Studio sets it on
   beta sites, so a game's beta plays on beta Hawkes Net and its live site on the real one, with no change to the game.
   An `endpoint` or `sdkUrl` you set yourself still wins (the live address counts as unset: scenes save the default).
 
@@ -29,14 +35,14 @@
 ## 0.3.0 (2026-10-26)
 
 - The relay by default (`HawkesNetOptions.transport` is `"relay"`): peer to peer (`"auto"`) only where the project
-  turns it on (net.hawkesgen.com > your project > Settings).
-- Every project belongs to a hawkesgen.com account: make it on net.hawkesgen.com, pass its id as `project`. Download
+  turns it on (net.hawkesgen.ai > your project > Settings).
+- Every project belongs to a hawkesgen.ai account: make it on net.hawkesgen.ai, pass its id as `project`. Download
   this package there (Add package from tarball).
 
 ## 0.2.1 (2026-10-26)
 
 - A game with no server of its own joins with its account's project (`usr_...`) once its sites are listed on
-  net.hawkesgen.com ("Your game's sites"); localhost always may, in test rooms. Readme: "Your own game: getting in".
+  net.hawkesgen.ai ("Your game's sites"); localhost always may, in test rooms. Readme: "Your own game: getting in".
 - Sample **Avatars**: one script makes a walking capsule and everyone else's, through `HawkesNetAvatars`.
 - No code changes in Runtime.
 

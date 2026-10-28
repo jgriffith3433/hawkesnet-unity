@@ -7,13 +7,13 @@ using UnityEngine;
 
 namespace Hawkes
 {
-    /// <summary>How to join a room. Give either TicketUrl (your server asks hawkesgen.com for tickets with your API key:
+    /// <summary>How to join a room. Give either TicketUrl (your server asks hawkesgen.ai for tickets with your API key:
     /// POST /v1/net/rooms/ticket) or Project (a Hawkes Net project whose sites may ask without a key).</summary>
     [Serializable]
     public class HawkesNetOptions
     {
         /// <summary>Your server's ticket route. The page POSTs { room, name } to it and expects the answer it got from
-        /// hawkesgen.com back as JSON.</summary>
+        /// hawkesgen.ai back as JSON.</summary>
         public string ticketUrl = "";
         /// <summary>Send cookies with the ticket request (your ticket route is on another site that signs players in).</summary>
         public bool ticketCredentials;
@@ -21,14 +21,14 @@ namespace Hawkes
         public string project = "";
         public string name = "";
         /// <summary>"relay" (the default), or "auto" (peer to peer while small, then the relay) where the project allows
-        /// peer to peer (a setting on net.hawkesgen.com, off by default).</summary>
+        /// peer to peer (a setting on net.hawkesgen.ai, off by default).</summary>
         public string transport = "relay";
         /// <summary>"player" or "spectator".</summary>
         public string role = "player";
-        /// <summary>The Hawkes Net service, when not https://net.hawkesgen.com.</summary>
+        /// <summary>The Hawkes Net service, when not https://net.hawkesgen.ai.</summary>
         public string endpoint = "";
         /// <summary>Where the SDK is loaded from.</summary>
-        public string sdkUrl = "https://net.hawkesgen.com/sdk/hawkes-net@1.mjs";
+        public string sdkUrl = "https://net.hawkesgen.ai/sdk/hawkes-net@1.mjs";
         /// <summary>Leave the room when the tab is closed or hidden for long (the web default). Off for games that
         /// keep playing in the background.</summary>
         public bool leaveOnHide = true;
@@ -238,7 +238,7 @@ namespace Hawkes
     }
 
     /// <summary>
-    /// Hawkes Net multiplayer for Unity (https://net.hawkesgen.com). In a WebGL build the web SDK runs in the page and this
+    /// Hawkes Net multiplayer for Unity (https://net.hawkesgen.ai). In a WebGL build the web SDK runs in the page and this
     /// is its C# face; in the Editor and desktop builds a managed client (HawkesNetClient) joins the same rooms on the relay.
     /// HawkesNet.Join("lobby", new HawkesNetOptions { ticketUrl = "https://mygame.example/ticket", name = "Ada" })
     /// gives a room; handle OnReady, On("chat", ...), read Poses (or OnPose) each frame, call Pose(...) with yours. Most
@@ -303,7 +303,7 @@ namespace Hawkes
             }
         }
         /// <summary>Where the web SDK loads from (RunInBackground; a room's own sdkUrl is in its options).</summary>
-        public static string SdkUrl = "https://net.hawkesgen.com/sdk/hawkes-net@1.mjs";
+        public static string SdkUrl = "https://net.hawkesgen.ai/sdk/hawkes-net@1.mjs";
 
         /// <summary>Milliseconds since 1970 on this machine's clock (a room's Now is the shared one).</summary>
         public static double UnixMs() => (DateTime.UtcNow - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalMilliseconds;
@@ -320,7 +320,7 @@ namespace Hawkes
                 var c = new HawkesNetClient(r.handle, room, new HawkesNetClientOptions
                 {
                     project = options.project, name = options.name, role = options.role, ticketUrl = options.ticketUrl, key = options.key,
-                    endpoint = string.IsNullOrEmpty(options.endpoint) ? "https://net.hawkesgen.com" : options.endpoint,
+                    endpoint = string.IsNullOrEmpty(options.endpoint) || options.endpoint.TrimEnd('/') == "https://net.hawkesgen.com" ? "https://net.hawkesgen.ai" : options.endpoint,
                     configJson = options.configJson, ticketCredentials = options.ticketCredentials, sub = DeviceSub(),
                 });
                 managed[r.handle] = c;
@@ -377,7 +377,7 @@ namespace Hawkes
         static readonly System.Collections.Concurrent.ConcurrentQueue<string> managedCounts = new System.Collections.Concurrent.ConcurrentQueue<string>();
         static void CountManaged(int id, string endpoint, string project, IList<string> roomNames)
         {
-            var url = (string.IsNullOrEmpty(endpoint) ? "https://net.hawkesgen.com" : endpoint.TrimEnd('/')) + "/v1/net/counts?project=" + Uri.EscapeDataString(project ?? "") + "&rooms=" + Uri.EscapeDataString(string.Join(",", roomNames ?? new string[0]));
+            var url = (string.IsNullOrEmpty(endpoint) || endpoint.TrimEnd('/') == "https://net.hawkesgen.com" ? "https://net.hawkesgen.ai" : endpoint.TrimEnd('/')) + "/v1/net/counts?project=" + Uri.EscapeDataString(project ?? "") + "&rooms=" + Uri.EscapeDataString(string.Join(",", roomNames ?? new string[0]));
             System.Threading.Tasks.Task.Run(async () =>
             {
                 try

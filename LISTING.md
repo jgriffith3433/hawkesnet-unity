@@ -1,6 +1,6 @@
 # Asset Store listing: Hawkes Net
 
-**Requires a free hawkesgen.com account and a Hawkes Net project (net.hawkesgen.com). Games connect to Hawkes Net's
+**Requires a free hawkesgen.ai account and a Hawkes Net project (net.hawkesgen.ai). Games connect to Hawkes Net's
 servers; free projects have limits (rooms, players), paid accounts more.**
 
 ## Summary (short)
@@ -21,9 +21,9 @@ Hawkes Net puts your players in the same rooms with a few lines of C#.
 - **WebGL** builds use Hawkes Net's web SDK in the page (WebSocket relay; peer to peer for small rooms where your project
   allows it). **The Editor and desktop builds** join the same rooms with a managed client: press Play and it joins your
   project's test room.
-- **No server needed** for a game on its own website (list your sites on net.hawkesgen.com); games with logins hand out
+- **No server needed** for a game on its own website (list your sites on net.hawkesgen.ai); games with logins hand out
   tickets from their own server with one HTTPS call.
-- A live dashboard at net.hawkesgen.com: players online, rooms and who is in them, tickets and usage.
+- A live dashboard at net.hawkesgen.ai: players online, rooms and who is in them, tickets and usage.
 - Includes an Avatars sample. MIT-licensed source: github.com/jgriffith3433/hawkesnet-unity.
 
 ## Technical details

@@ -1,17 +1,17 @@
 # Hawkes Net for Unity
 
-Multiplayer for Unity games on Hawkes Net (https://net.hawkesgen.com). WebGL builds run Hawkes Net's web SDK in the page
+Multiplayer for Unity games on Hawkes Net (https://net.hawkesgen.ai). WebGL builds run Hawkes Net's web SDK in the page
 (the relay, or peer to peer while a room is small where your project allows it); **the Editor and desktop builds join the
 same rooms on the relay with a managed client**, so you can try it in Play mode. Three layers; most games use the first
 or second.
 
 **In the Editor:** with no `ticketUrl` or `key`, a join goes to your project's test rooms (`t-...`) with no key: press
-Play. **A desktop build:** set `ticketUrl` to your server's ticket route (it asks hawkesgen.com with your API key). `key`
+Play. **A desktop build:** set `ticketUrl` to your server's ticket route (it asks hawkesgen.ai with your API key). `key`
 is for servers, bots and tests only: never ship a key in a game.
 
 ## Your own game: getting in
 
-1. Sign in on **https://net.hawkesgen.com** with a hawkesgen.com account (free) and make a **project**: its id is what
+1. Sign in on **https://net.hawkesgen.ai** with a hawkesgen.ai account (free) and make a **project**: its id is what
    your game passes as `project`. Its page shows players online, rooms and who is in them, tickets and usage, live.
 2. **No server** (most WebGL games: a static page, itch.io): list where the game is served under the project's Settings
    (`https://mygame.com`, `https://mygame.itch.io`; a paid account). Pages there join with no key, and your own machine
@@ -90,7 +90,7 @@ Presence games usually leave it off: the player is shown as away and the host ro
 
 ```csharp
 var room = HawkesNet.Join("lobby", new HawkesNetOptions {
-    ticketUrl = "https://mygame.example/ticket",   // your server: POST /v1/net/rooms/ticket on hawkesgen.com with your API key
+    ticketUrl = "https://mygame.example/ticket",   // your server: POST /v1/net/rooms/ticket on hawkesgen.ai with your API key
     name = "Ada",                                  // (or project = "mygame" for a page on that project's own sites)
 });
 room.OnReady += r => Debug.Log($"in {r.Name} as {r.Id} over {r.Transport}");
@@ -106,11 +106,11 @@ room.OnPose += (id, pose) => MoveAvatar(id, pose.position, pose.yaw);   // or re
 - **Messages**: reliable ones arrive once and in order (also across reconnects and the move to the relay); an unreliable
   one is replaced by a newer one of its kind still queued. `room.Order` and `PeerOrder` are the join order (the oldest is
   the host: `room.Host`).
-- **Your ticket route** receives `{ room, name }` from the page and answers with what hawkesgen.com gave it:
-  `POST https://hawkesgen.com/v1/net/rooms/ticket` with `Authorization: Bearer hg_...` and `{ "room", "name", "transport", "config" }`.
+- **Your ticket route** receives `{ room, name }` from the page and answers with what hawkesgen.ai gave it:
+  `POST https://hawkesgen.ai/v1/net/rooms/ticket` with `Authorization: Bearer hg_...` and `{ "room", "name", "transport", "config" }`.
   Rooms are in your own project; usage is on your account. A Hawkes game uses its project's public door instead (`project`).
-- WebGL builds only: the web SDK runs in the page (loaded from `https://net.hawkesgen.com/sdk/hawkes-net@1.mjs`). In the
+- WebGL builds only: the web SDK runs in the page (loaded from `https://net.hawkesgen.ai/sdk/hawkes-net@1.mjs`). In the
   Editor `Join` reports the problem `webgl-only` (a lobby's status is then `offline`): keep an Editor stand-in of your own.
 - Events come on the main thread. Changed poses are read once a frame.
-- Install: download it from net.hawkesgen.com (`/sdk/com.hawkes.net.tgz`) and Package Manager > Add package from tarball, or
+- Install: download it from net.hawkesgen.ai (`/sdk/com.hawkes.net.tgz`) and Package Manager > Add package from tarball, or
   a copy in your game's `Packages/` (a build machine that can't see this folder). `CHANGELOG.md` says what changed.
