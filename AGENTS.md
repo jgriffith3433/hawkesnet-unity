@@ -30,3 +30,12 @@ pull requests into `beta` (they merge themselves once CI passes); `main` moves o
 - **Release** (`.github/workflows/release.yml`): when main gets a `package.json` version with no tag, it tags
   `v<version>` and makes a GitHub release with the tarball. Bump `package.json` and `CHANGELOG.md` together on beta.
   After a release, copy the package into hawkesnet's `sdk/unity/` (its download) and bump the games' manifests.
+
+## Studio's playtest of the demo
+
+The demo build carries Hawkes Studio's playtest bot: `HawkesNetDemoBuild` copies `DevTools/demo-web/` (outside Assets, so
+Unity ignores it) beside the WebGL `index.html` and adds `unity-playtest.mjs` to it. The bot (`window.hawkesPlaytest`)
+finds the Unity player's room in the page (`window.__hawkesNet`, HawkesNet.jslib), opens a second player there, walks the
+capsule with real key presses and checks poses and messages both ways through the bridge (`smoke`), or meets real
+browsers on one `?room=` (`two-players`). `net-playtest.mjs` is the same file as hawkesnet-js and hawkesnet-babylon's
+`example/net-playtest.mjs`: change all of them.

@@ -70,8 +70,25 @@ namespace Hawkes.Demo.Editor
                 if (quit) EditorApplication.Exit(1);
                 return;
             }
+            AddPlaytest(outDir);
             Debug.Log($"[Hawkes] built the Hawkes Net demo in {s.totalTime.TotalSeconds:0}s, {s.totalSize} bytes");
             if (quit) EditorApplication.Exit(0);
+        }
+
+        /// <summary>
+        /// Hawkes Studio's playtest bot (DevTools/demo-web: window.hawkesPlaytest): copied beside the build's index.html and loaded by
+        /// it, so a Studio playtest opens a second player in the Unity player's room and checks poses and messages both
+        /// ways. Nothing runs unless a playtest starts.
+        /// </summary>
+        static void AddPlaytest(string outDir)
+        {
+            var web = Path.GetFullPath("DevTools/demo-web");
+            foreach (var f in new[] { "net-playtest.mjs", "unity-playtest.mjs" }) File.Copy(Path.Combine(web, f), Path.Combine(outDir, f), true);
+            var index = Path.Combine(outDir, "index.html");
+            if (!File.Exists(index)) throw new Exception("the WebGL build has no index.html to add the playtest bot to");
+            const string tag = "<script type=\"module\" src=\"unity-playtest.mjs\"></script>";
+            var html = File.ReadAllText(index);
+            if (!html.Contains(tag)) File.WriteAllText(index, html.Contains("</body>") ? html.Replace("</body>", tag + "\n</body>") : html + "\n" + tag + "\n");
         }
     }
 }
