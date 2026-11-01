@@ -15,3 +15,18 @@ since 2026-10-26 (J: make hawkesnet-unity like hawkesgen-unity); before that it 
 - **Consumers:** Yooba Land and Sick Of It install it by git URL (`Packages/manifest.json`); bump the tag there after a
   release. Tag every release `v<version>` (the git URL pins it).
 - Never put a key in a sample or a test.
+
+## How Hawkes Studio builds and releases it (2026-11-01)
+
+Studio project `hawkes-net-unity` (engine unity, Jaycee's Studio cell `j-studio-4f12`). Work on `claude/*` branches,
+pull requests into `beta` (they merge themselves once CI passes); `main` moves only when Jaycee takes beta live.
+- **demo** (Hawkes Gen's cloud, Unity 6000.3.7f1): `-executeMethod Hawkes.Demo.Editor.HawkesNetDemoBuild.CloudBuild`
+  (`Assets/HawkesNetDemo/`) makes a scene with the Avatars sample and builds it to WebGL, so every beta push checks that
+  the package compiles for WebGL and gives a playable demo on the project's Studio beta site. Keep
+  `Assets/HawkesNetDemo/HawkesNetDemo.cs` in step with `Samples~/Avatars`. The demo scene itself is made, not committed.
+- **package** (Studio): `npm pack` of `Packages/com.hawkes.net`, the tarball games can install.
+- **CI** (`.github/workflows/ci.yml`): package.json, every .meta, and the managed client compiles (plain .NET). The
+  managed client runs end to end in hawkesnet's CI against the service.
+- **Release** (`.github/workflows/release.yml`): when main gets a `package.json` version with no tag, it tags
+  `v<version>` and makes a GitHub release with the tarball. Bump `package.json` and `CHANGELOG.md` together on beta.
+  After a release, copy the package into hawkesnet's `sdk/unity/` (its download) and bump the games' manifests.

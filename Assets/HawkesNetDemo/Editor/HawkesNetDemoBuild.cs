@@ -1,0 +1,78 @@
+// Hawkes Studio's build of this repo (project hawkes-net-unity, build "demo"): Hawkes Gen builds the commit in its cloud
+// with -executeMethod Hawkes.Demo.Editor.HawkesNetDemoBuild.CloudBuild, which makes the demo scene (one object with
+// HawkesNetDemo: the package's Avatars sample) and builds it to WebGL into the folder in env HAWKES_OUT. A failed
+// compile of the package or the demo fails the build, so every build checks com.hawkes.net for WebGL (its jslib too).
+// In the Editor: Hawkes Net > Build the demo (WebGL) builds into Build/Demo.
+#if UNITY_EDITOR
+using System;
+using System.IO;
+using UnityEditor;
+using UnityEditor.Build.Reporting;
+using UnityEditor.SceneManagement;
+using UnityEngine;
+using UnityEngine.SceneManagement;
+
+namespace Hawkes.Demo.Editor
+{
+    public static class HawkesNetDemoBuild
+    {
+        public const string ScenePath = "Assets/HawkesNetDemo/Demo.unity";
+
+        /// <summary>Makes (or remakes) the demo scene: a light and one object running HawkesNetDemo.</summary>
+        [MenuItem("Hawkes Net/Make the demo scene")]
+        public static void MakeScene()
+        {
+            var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            var light = new GameObject("Light").AddComponent<Light>();
+            light.type = LightType.Directional;
+            light.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
+            new GameObject("Hawkes Net demo").AddComponent<HawkesNetDemo>();
+            if (!EditorSceneManager.SaveScene(scene, ScenePath)) throw new Exception("could not save " + ScenePath);
+            AssetDatabase.Refresh();
+        }
+
+        [MenuItem("Hawkes Net/Build the demo (WebGL)")]
+        public static void BuildInEditor() => Build(Path.GetFullPath("Build/Demo"), false);
+
+        /// <summary>Hawkes Gen's cloud build: into HAWKES_OUT, then quits with 0 on success.</summary>
+        public static void CloudBuild()
+        {
+            var outDir = Environment.GetEnvironmentVariable("HAWKES_OUT");
+            if (string.IsNullOrEmpty(outDir)) outDir = Path.GetFullPath("Build/Demo");
+            try { Build(outDir, true); }
+            catch (Exception e)
+            {
+                Debug.LogError("[Hawkes] demo build failed: " + e);
+                EditorApplication.Exit(1);
+            }
+        }
+
+        static void Build(string outDir, bool quit)
+        {
+            MakeScene();
+            // Served by static hosts without Content-Encoding (Hawkes Gen's own default build does the same).
+            PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Disabled;
+            PlayerSettings.WebGL.decompressionFallback = false;
+            PlayerSettings.runInBackground = true;
+            Directory.CreateDirectory(outDir);
+            Debug.Log("[Hawkes] building the Hawkes Net demo to WebGL: " + outDir);
+            var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
+            {
+                scenes = new[] { ScenePath },
+                locationPathName = outDir,
+                target = BuildTarget.WebGL,
+                options = BuildOptions.None,
+            });
+            var s = report.summary;
+            if (s.result != BuildResult.Succeeded)
+            {
+                Debug.LogError($"[Hawkes] demo build failed: {s.result}, {s.totalErrors} error(s)");
+                if (quit) EditorApplication.Exit(1);
+                return;
+            }
+            Debug.Log($"[Hawkes] built the Hawkes Net demo in {s.totalTime.TotalSeconds:0}s, {s.totalSize} bytes");
+            if (quit) EditorApplication.Exit(0);
+        }
+    }
+}
+#endif

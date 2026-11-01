@@ -1,0 +1,57 @@
+# Checks every pull request and every push to dev, beta and main. No secrets, no Unity license:
+# - the package: package.json is valid, every file and folder has its .meta (games reference the GUIDs);
+# - the managed client (Runtime/HawkesNetClient.cs, plain .NET) and DevTools/ManagedTest compile.
+# The full checks run elsewhere: Hawkes Studio's "demo" build compiles the package for WebGL in Unity (Hawkes Gen's
+# cloud), and hawkesnet's CI runs ManagedTest end to end against the service (that repo is private).
+# The beta auto-merge waits for these before merging a pull request into beta.
+name: CI
+
+on:
+  pull_request:
+    branches: [dev, beta, main]
+  push:
+    branches: [dev, beta, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: Package and managed client
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: package.json and .meta files
+        run: |
+          jq -e '.name == "com.hawkes.net" and (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))' Packages/com.hawkes.net/package.json
+          missing=0
+          while IFS= read -r p; do
+            [ -f "$p.meta" ] || { echo "::error file=$p::no .meta for $p"; missing=1; }
+          done < <(find Packages/com.hawkes.net Assets -mindepth 1 -not -name '*.meta' -not -path '*/Samples~*' 2>/dev/null)
+          exit $missing
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Compile the managed client and its test
+        run: |
+          # *.csproj is ignored in this repo: the test's project file is made here.
+          cat > DevTools/ManagedTest/ManagedTest.csproj <<'EOF'
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>Exe</OutputType>
+              <TargetFramework>net8.0</TargetFramework>
+              <Nullable>disable</Nullable>
+              <ImplicitUsings>disable</ImplicitUsings>
+            </PropertyGroup>
+            <ItemGroup>
+              <Compile Include="../../Packages/com.hawkes.net/Runtime/HawkesNetClient.cs" />
+            </ItemGroup>
+          </Project>
+          EOF
+          dotnet build DevTools/ManagedTest -c Release
