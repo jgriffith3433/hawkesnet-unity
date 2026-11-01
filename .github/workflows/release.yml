@@ -1,0 +1,43 @@
+# Releases the package when main gets a version that has no tag yet: tags v<version> (what games pin in their
+# Packages/manifest.json, and what Hawkes Studio's Hawkes Net plugin lists as the latest) and makes a GitHub release
+# with the package as a tarball (Package Manager > Add package from tarball). main moves only when Jaycee takes beta
+# live, so this runs only then. Uses the workflow's own token; no secrets. The Asset Store upload stays by hand
+# (PUBLISHING.md).
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths: ['Packages/com.hawkes.net/package.json']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Tag and release the version in package.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(jq -r .version Packages/com.hawkes.net/package.json)
+          tag="v$version"
+          if git rev-parse -q --verify "refs/tags/$tag" > /dev/null; then echo "$tag is already released"; exit 0; fi
+          mkdir -p dist
+          (cd Packages/com.hawkes.net && npm pack --pack-destination ../../dist)
+          notes=$(awk -v v="$version" '$0 ~ "^## \\[?"v {f=1; next} f && /^## / {exit} f' Packages/com.hawkes.net/CHANGELOG.md)
+          [ -n "$notes" ] || notes="com.hawkes.net $version"
+          git tag -a "$tag" -m "com.hawkes.net $version" "$GITHUB_SHA"
+          git push origin "$tag"
+          gh release create "$tag" dist/*.tgz --title "com.hawkes.net $version" --notes "$notes
+          Install: https://github.com/$GITHUB_REPOSITORY.git?path=/Packages/com.hawkes.net#$tag"

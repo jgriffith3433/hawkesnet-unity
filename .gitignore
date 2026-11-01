@@ -19,3 +19,7 @@
 # The managed test
 DevTools/ManagedTest/bin/
 DevTools/ManagedTest/obj/
+
+# The demo scene: made by HawkesNetDemoBuild (Hawkes Net > Make the demo scene, and every demo build)
+/Assets/HawkesNetDemo/Demo.unity
+/Assets/HawkesNetDemo/Demo.unity.meta
