@@ -7,7 +7,7 @@ run Hawkes Net's web SDK in the page; the Editor and desktop builds join the sam
 **Install** (Package Manager > + > Add package from git URL):
 
 ```
-https://github.com/jgriffith3433/hawkesnet-unity.git?path=/Packages/com.hawkes.net#v0.5.1
+https://github.com/jgriffith3433/hawkesnet-unity.git?path=/Packages/com.hawkes.net#v0.6.0
 ```
 
 or download `com.hawkes.net.tgz` from [net.hawkesgen.ai](https://net.hawkesgen.ai) (Add package from tarball), or get
