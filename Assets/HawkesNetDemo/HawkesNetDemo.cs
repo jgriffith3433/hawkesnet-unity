@@ -26,13 +26,21 @@ namespace Hawkes.Demo
         {
             var ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
             ground.transform.localScale = new Vector3(5f, 1f, 5f);
-            player = GameObject.CreatePrimitive(PrimitiveType.Capsule).transform;
+            // CreatePrimitive adds a collider inside the engine, so a build that strips unused engine code (WebGL) drops
+            // the physics module unless managed code names these types ("Can't add component because class
+            // 'MeshCollider' doesn't exist!"). Naming them here keeps them; the scene moves by transform, so nothing
+            // needs the colliders.
+            Destroy(ground.GetComponent<MeshCollider>());
+            var playerCapsule = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+            Destroy(playerCapsule.GetComponent<CapsuleCollider>());
+            player = playerCapsule.transform;
             player.position = new Vector3(Random.Range(-4f, 4f), 1f, Random.Range(-4f, 4f));
             player.GetComponent<Renderer>().material.color = Color.HSVToRGB(Random.value, 0.6f, 0.9f);
 
             // Everyone else: a grey capsule, kept inactive as the template.
             var remote = GameObject.CreatePrimitive(PrimitiveType.Capsule);
             remote.name = "Remote template";
+            Destroy(remote.GetComponent<CapsuleCollider>());
             remote.SetActive(false);
 
             var cam = Camera.main != null ? Camera.main : new GameObject("Camera").AddComponent<Camera>();
