@@ -212,9 +212,12 @@ export function installNetPlaytest(o) {
     });
     if (!okMeet) return finish('lost');
     progress(0.4);
+    // Keep moving for the rest of the run: the other browser may start watching after this one has made its first moves
+    // (it found us later, or plays slower), and it must still see this player move.
+    const r = run;
+    (async () => { try { while (r === run && !r.done) await o.drive(step); } catch { /* the run ended */ } })();
     await check("The other player's moves show here", async () => {
       let first = o.shownPos(other)?.slice() ?? null;
-      await o.drive(step); // our own moves, while theirs arrive
       await until(() => { const p = o.shownPos(other); if (p && !first) first = p.slice(); return p && first && !near(p, first, tol); }, 15000, 'the other player to move on this page');
       return `now at ${fmt(o.shownPos(other))}`;
     });
