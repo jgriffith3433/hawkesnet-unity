@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.1 (2026-11-03)
+
+- **Avatars sample: no more magenta in WebGL.** The sample's ground and capsules came from `CreatePrimitive`, whose
+  Default-Material uses the Standard shader; nothing else in the scene references it, so a WebGL build stripped it and
+  drew everything in the error colour. The sample now makes its materials from a shader found by name. Add that shader
+  (Standard, or your render pipeline's Lit) to Project Settings > Graphics > Always Included Shaders in your build.
+
 ## 0.6.0 (2026-10-28)
 
 - **Hawkes Net is at https://net.hawkesgen.ai** (hawkesgen.com is gone). The default endpoint, the SDK file and counts use it.

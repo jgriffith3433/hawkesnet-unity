@@ -22,6 +22,20 @@ namespace Hawkes.Demo
         Transform player;
         HawkesNetAvatars avatars;
 
+        // CreatePrimitive gives the built-in Default-Material (the Standard shader). Nothing in this scene references
+        // that shader, so a WebGL build strips it and every primitive renders as Unity's error magenta. So each object
+        // gets a material from a shader that is looked up by name (kept by Always Included Shaders: HawkesNetDemoBuild
+        // adds Standard; in your own project add the shader your render pipeline uses), with fallbacks.
+        static Material MakeMaterial(Color color)
+        {
+            Shader shader = null;
+            foreach (var n in new[] { "Standard", "Universal Render Pipeline/Lit", "Sprites/Default" })
+                if (!shader) shader = Shader.Find(n);
+            var m = new Material(shader);
+            m.color = color;
+            return m;
+        }
+
         void Awake()
         {
             var ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
@@ -31,16 +45,18 @@ namespace Hawkes.Demo
             // 'MeshCollider' doesn't exist!"). Naming them here keeps them; the scene moves by transform, so nothing
             // needs the colliders.
             Destroy(ground.GetComponent<MeshCollider>());
+            ground.GetComponent<Renderer>().sharedMaterial = MakeMaterial(new Color(0.35f, 0.55f, 0.35f));
             var playerCapsule = GameObject.CreatePrimitive(PrimitiveType.Capsule);
             Destroy(playerCapsule.GetComponent<CapsuleCollider>());
             player = playerCapsule.transform;
             player.position = new Vector3(Random.Range(-4f, 4f), 1f, Random.Range(-4f, 4f));
-            player.GetComponent<Renderer>().material.color = Color.HSVToRGB(Random.value, 0.6f, 0.9f);
+            player.GetComponent<Renderer>().sharedMaterial = MakeMaterial(Color.HSVToRGB(Random.value, 0.6f, 0.9f));
 
             // Everyone else: a grey capsule, kept inactive as the template.
             var remote = GameObject.CreatePrimitive(PrimitiveType.Capsule);
             remote.name = "Remote template";
             Destroy(remote.GetComponent<CapsuleCollider>());
+            remote.GetComponent<Renderer>().sharedMaterial = MakeMaterial(Color.gray);
             remote.SetActive(false);
 
             var cam = Camera.main != null ? Camera.main : new GameObject("Camera").AddComponent<Camera>();

@@ -7,3 +7,6 @@
 3. Build for WebGL (Build And Run) and open the page in two tabs: each tab walks a capsule with WASD and sees the other's.
 
 In the Editor nothing joins (Hawkes Net runs in the page): the status reads `offline` with the problem `webgl-only`.
+
+If the ground and capsules are magenta in the build, their shader was stripped: add **Standard** (or your render
+pipeline's Lit shader) to Project Settings > Graphics > Always Included Shaders.
