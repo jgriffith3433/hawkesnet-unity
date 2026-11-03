@@ -47,8 +47,29 @@ namespace Hawkes.Demo.Editor
             }
         }
 
+        /// <summary>
+        /// Puts a shader in Graphics settings > Always Included Shaders. The demo makes its materials at run time
+        /// (Shader.Find), so no asset references the shader and a WebGL build would strip it: magenta everywhere.
+        /// </summary>
+        static void IncludeShader(string name)
+        {
+            var shader = Shader.Find(name);
+            if (shader == null) throw new Exception("shader not found: " + name);
+            var graphics = AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/GraphicsSettings.asset");
+            if (graphics == null || graphics.Length == 0) throw new Exception("could not open ProjectSettings/GraphicsSettings.asset");
+            var so = new SerializedObject(graphics[0]);
+            var list = so.FindProperty("m_AlwaysIncludedShaders");
+            for (int i = 0; i < list.arraySize; i++)
+                if (list.GetArrayElementAtIndex(i).objectReferenceValue == shader) return;
+            list.InsertArrayElementAtIndex(list.arraySize);
+            list.GetArrayElementAtIndex(list.arraySize - 1).objectReferenceValue = shader;
+            so.ApplyModifiedProperties();
+            AssetDatabase.SaveAssets();
+        }
+
         static void Build(string outDir, bool quit)
         {
+            IncludeShader("Standard");
             MakeScene();
             // Served by static hosts without Content-Encoding (Hawkes Gen's own default build does the same).
             PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Disabled;
