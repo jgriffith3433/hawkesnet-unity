@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.3 (2026-11-06)
+
+- **Avatars sample: colours, floating names and three emotes.** Each player gets a colour (random; if two players land on
+  nearly the same hue, the one whose id sorts last moves to the free hue farthest from the others), a name floating above
+  the head in that colour, and three emotes on the keys 1, 2 and 3: wave (rocks side to side), hop, spin, each with a
+  caption above the name. The colour and the emote ride in the pose's Extra values (`HawkesNetAvatars.Extra`, read as
+  `Remote.Extra`), so your own game can do the same. Players are now an empty root with a capsule body and a nose, so a
+  spin shows; the emote animates the body, not the root the room moves. No package API changed.
+
 ## 0.6.2 (2026-11-06)
 
 - **Avatars sample: a bounded arena.** The ground is now a square of 2 x `ArenaHalf` metres (12 by default, was 50 by 50)
