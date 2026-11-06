@@ -5,6 +5,18 @@ Multiplayer for Unity games on Hawkes Net (https://net.hawkesgen.ai). WebGL buil
 same rooms on the relay with a managed client**, so you can try it in Play mode. Three layers; most games use the first
 or second.
 
+## Quickstart
+
+1. **Install.** Package Manager > + > Add package from git URL:
+   `https://github.com/jgriffith3433/hawkesnet-unity.git?path=/Packages/com.hawkes.net#v0.9.0`
+2. **Make a project.** Sign in at [net.hawkesgen.ai](https://net.hawkesgen.ai) (free) and create a project; copy its id (`usr_...`).
+3. **Check your setup.** Window > Hawkes Net > Setup. Paste the id: the window flags a missing or odd id, a scene with no
+   player, and anything else a first join needs.
+4. **Add the sample.** Package Manager > Hawkes Net > Samples > Import *Avatars*, put its script on an empty GameObject and
+   set `Project` to your id (the Setup window's "Use it on the scene's Avatars" does it).
+5. **Press Play.** You join your project's test room with no key. Build for WebGL and open two tabs, or run a second
+   Editor, to meet yourself.
+
 **In the Editor:** with no `ticketUrl` or `key`, a join goes to your project's test rooms (`t-...`) with no key: press
 Play. **A desktop build:** set `ticketUrl` to your server's ticket route (it asks hawkesgen.ai with your API key). `key`
 is for servers, bots and tests only: never ship a key in a game.

@@ -7,12 +7,24 @@ run Hawkes Net's web SDK in the page; the Editor and desktop builds join the sam
 **Install** (Package Manager > + > Add package from git URL):
 
 ```
-https://github.com/jgriffith3433/hawkesnet-unity.git?path=/Packages/com.hawkes.net#v0.6.0
+https://github.com/jgriffith3433/hawkesnet-unity.git?path=/Packages/com.hawkes.net#v0.9.0
 ```
 
 or download `com.hawkes.net.tgz` from [net.hawkesgen.ai](https://net.hawkesgen.ai) (Add package from tarball), or get
 it from the Unity Asset Store. Then make a free account and a project at [net.hawkesgen.ai](https://net.hawkesgen.ai)
 and read [the package's README](Packages/com.hawkes.net/README.md).
+
+## Quickstart
+
+1. **Install.** Package Manager > + > Add package from git URL:
+   `https://github.com/jgriffith3433/hawkesnet-unity.git?path=/Packages/com.hawkes.net#v0.9.0`
+2. **Make a project.** Sign in at [net.hawkesgen.ai](https://net.hawkesgen.ai) (free) and create a project; copy its id (`usr_...`).
+3. **Check your setup.** Window > Hawkes Net > Setup. Paste the id: the window flags a missing or odd id, a scene with no
+   player, and anything else a first join needs.
+4. **Add the sample.** Package Manager > Hawkes Net > Samples > Import *Avatars*, put its script on an empty GameObject and
+   set `Project` to your id (the Setup window's "Use it on the scene's Avatars" does it).
+5. **Press Play.** You join your project's test room with no key. Build for WebGL and open two tabs, or run a second
+   Editor, to meet yourself.
 
 ```csharp
 using Hawkes;

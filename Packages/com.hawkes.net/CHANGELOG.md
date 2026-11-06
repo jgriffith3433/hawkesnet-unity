@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.0 (2026-11-06)
+
+- **Setup window.** Window > Hawkes Net > Setup (Editor only, `Hawkes.Net.Editor`) checks the project and scene for a
+  first join: flags a missing or odd project id (`usr_...`), an Avatars component with no Local player, the build target
+  and live hosts, and can set the id on the scene's Avatars.
+- **Quickstart.** Both READMEs open with a 5-step quickstart (install, project, setup window, sample, Play).
+
 ## 0.8.1 (2026-11-06)
 
 - **Fix: a page can skip the start screen.** `HawkesNetStartScreen` joins at once, with the name and room in the fields,
