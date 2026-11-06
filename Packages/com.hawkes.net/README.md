@@ -70,8 +70,31 @@ project with its own sites).
 ## 2. Drop-in avatars: `HawkesNetAvatars`
 
 A component: set `Project`, `Area`, `LiveHosts`, `Local` (your player) and `RemotePrefab`. It joins through a lobby,
-sends your pose, and keeps one prefab per other player, moved smoothly a little behind their own clock (`Delay`).
-`Extra` rides with your pose; read `Remotes[id].Extra` on the others.
+sends your pose, and keeps one prefab per other player, moved every frame by a `HawkesNetTrack`. `Extra` rides with your
+pose; read `Remotes[id].Extra` on the others.
+
+### Smooth remote players: `HawkesNetTrack`
+
+Poses arrive about 30 times a second, late and unevenly. A track draws each player a little in the past, between the two
+poses around that moment (position and facing), so they move every frame and turn the short way. How far in the past is
+learned per player: how late their poses arrive, how often, and how much that varies, eased in so playback never jumps.
+When a pose is late the player is carried on along its velocity and turn (up to `MaxExtrapolation`, 250 ms), and the
+guess's error is blended out in about a tenth of a second when the real pose comes. `HawkesNetAvatars.Delay` is the
+least delay (0: the learned one); `Remotes[id].Track.Delay` and `.Ahead` say how far behind and how far predicted.
+
+With your own avatars, one track per player:
+
+```csharp
+var tracks = new Dictionary<string, HawkesNetTrack>();
+lobby.PoseChanged += (id, pose) => { if (!tracks.TryGetValue(id, out var t)) tracks[id] = t = new HawkesNetTrack(); t.Push(pose, lobby.Room.Now); };
+void Update() {
+    foreach (var kv in tracks)
+        if (kv.Value.Sample(lobby.Room.Now, out var position, out var yaw)) avatars[kv.Key].SetPositionAndRotation(position, Quaternion.Euler(0, yaw, 0));
+}
+```
+
+To feel a slow connection: `HawkesNet.SimulatedLatency = 150; HawkesNet.SimulatedJitter = 30;` (ms; the others' poses
+arrive that much later, in order). The Avatars sample reads `?lag=150&jitter=30` from the page's address.
 
 ## In the background
 

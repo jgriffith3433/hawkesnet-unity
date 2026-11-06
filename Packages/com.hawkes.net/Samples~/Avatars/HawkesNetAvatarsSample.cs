@@ -10,6 +10,8 @@ namespace Hawkes.Samples
     /// has a colour and a floating name, and three emotes on the keys 1, 2 and 3 (wave, hop, spin) that the others see.
     /// The colour and the emote ride in the pose's Extra values (HawkesNetAvatars.Extra / Remote.Extra), so any game can
     /// do the same. Put it on an empty GameObject in an empty scene, set Project, build for WebGL and open two tabs.
+    /// The others are drawn smoothly whatever the connection (HawkesNetAvatars plays them through a HawkesNetTrack);
+    /// add ?lag=150 (and &amp;jitter=30) to the page's address to feel a slow one (HawkesNet.SimulatedLatency).
     /// </summary>
     public sealed class HawkesNetAvatarsSample : MonoBehaviour
     {
@@ -19,6 +21,8 @@ namespace Hawkes.Samples
         public string[] LiveHosts = new string[0];
         public string Area = "sample";
         public float Speed = 5f;
+        [Tooltip("How fast the player turns to face where it walks (degrees a second): others see the same turn.")]
+        public float TurnSpeed = 720f;
         [Tooltip("Half the side of the square arena (m): the ground and its edge walls are at plus and minus this.")]
         public float ArenaHalf = 12f;
 
@@ -129,6 +133,10 @@ namespace Hawkes.Samples
             cam.transform.localPosition = new Vector3(0f, 4f, -8f);
             cam.transform.localRotation = Quaternion.Euler(20f, 0f, 0f);
 
+            // ?lag=<ms>&jitter=<ms> on the page's address: the others' poses arrive that much later (a slow connection).
+            HawkesNet.SimulatedLatency = UrlNumber("lag");
+            HawkesNet.SimulatedJitter = UrlNumber("jitter");
+
             // HawkesNetAvatars joins in OnEnable: switched off while its fields go in, on again to join.
             gameObject.SetActive(false);
             avatars = gameObject.AddComponent<HawkesNetAvatars>();
@@ -145,6 +153,20 @@ namespace Hawkes.Samples
             start.Avatars = avatars;
             start.Area = Area;
             gameObject.SetActive(true);
+        }
+
+        // A number from the page's address (?name=value), 0 when it isn't there (and outside a WebGL build).
+        static float UrlNumber(string name)
+        {
+            var url = Application.absoluteURL ?? "";
+            int q = url.IndexOf('?');
+            if (q < 0) return 0f;
+            foreach (var part in url.Substring(q + 1).Split('&', '#'))
+            {
+                int eq = part.IndexOf('=');
+                if (eq > 0 && part.Substring(0, eq) == name && float.TryParse(part.Substring(eq + 1), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v)) return Mathf.Clamp(v, 0f, 2000f);
+            }
+            return 0f;
         }
 
         // An edge wall: a visible box with no collider (the scene moves by transform, see Awake).
@@ -179,7 +201,8 @@ namespace Hawkes.Samples
             if (move.sqrMagnitude > 0.01f)
             {
                 player.position += move.normalized * Speed * Time.deltaTime;
-                player.rotation = Quaternion.LookRotation(move);
+                // Turn towards where it walks (not at once): the others see the same smooth turn.
+                player.rotation = Quaternion.RotateTowards(player.rotation, Quaternion.LookRotation(move), TurnSpeed * Time.deltaTime);
             }
             // The capsule stands on the ground (centre at 1 m, radius 0.5 m) and stays inside the walls, whatever the input.
             float limit = ArenaHalf - 0.5f;
@@ -268,7 +291,19 @@ namespace Hawkes.Samples
         {
             var lobby = avatars != null ? avatars.Lobby : null;
             if (lobby == null) return;
-            if (!start.Blocking) GUI.Label(new Rect(10, Screen.height - 28, 640, 24), "Move: WASD / arrows · Emotes: 1 wave · 2 hop · 3 spin");
+            if (!start.Blocking)
+            {
+                GUI.Label(new Rect(10, Screen.height - 28, 640, 24), "Move: WASD / arrows · Emotes: 1 wave · 2 hop · 3 spin");
+                // How the others are drawn: how far behind (the delay each one's connection needs), and whether one is
+                // being carried on past its newest pose right now.
+                if (avatars.Remotes.Count > 0)
+                {
+                    double most = 0, ahead = 0;
+                    foreach (var r in avatars.Remotes.Values) { most = Math.Max(most, r.Track.Delay); ahead = Math.Max(ahead, r.Track.Ahead); }
+                    string lag = HawkesNet.SimulatedLatency > 0f ? $" · simulated lag {HawkesNet.SimulatedLatency:0} ms" + (HawkesNet.SimulatedJitter > 0f ? $" ± {HawkesNet.SimulatedJitter:0}" : "") : "";
+                    GUI.Label(new Rect(10, Screen.height - 50, 640, 24), $"Others drawn {most:0} ms behind{(ahead > 0 ? $" · predicting {ahead:0} ms" : "")}{lag}");
+                }
+            }
 
             if (Event.current.type != EventType.Repaint) return;
             var cam = Camera.main;

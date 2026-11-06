@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.8.0 (2026-11-06)
+
+- **Smooth remote avatars: `HawkesNetTrack`.** `HawkesNetAvatars` now plays every other player through a track (the web
+  SDK's rules, so Unity and web pages draw a player alike): drawn between the two poses around a moment a little in the
+  past, position lerped and facing turned the short way, so the avatar moves every frame; the delay is learned per player
+  (how late their poses arrive, how often, how much that varies) and eased in, so a slow or jittery connection costs a
+  little delay instead of stutter; a late pose is guessed along the velocity and turn (up to `MaxExtrapolation`, 250 ms)
+  and the guess's error is blended out in about a tenth of a second; a player who stood still starts from where they
+  stood; a correction of the room's clock never shows as a jump. `Remote.Track` (Delay, Ahead, Jitter...),
+  `Remote.Position`, `Remote.Yaw` and `Remote.Velocity` say what is drawn. Games with their own avatars can use
+  `HawkesNetTrack` with `HawkesNetLobby.PoseChanged` (`Push(pose, room.Now)`, `Sample(room.Now, out position, out yaw)`).
+  At 150 ms of latency the old playback stood still in about half the frames and jumped; the track moves every frame
+  without a jump (`DevTools/TrackTest`).
+- **`HawkesNetAvatars.Delay` is now the least delay** (default 0: the learned one). A scene that saved 120 keeps at least 120.
+- **`HawkesNet.SimulatedLatency` and `SimulatedJitter`** (ms): the others' poses arrive that much later, in order, to feel a
+  slow connection. Both transports; on WebGL the page can set `window.__hawkesNet.lag` / `.jitter` too.
+- **Avatars sample:** the player turns smoothly towards where it walks (`TurnSpeed`, 720 degrees a second), so the others
+  see a turn rather than a snap; `?lag=150&jitter=30` on the page's address simulates a slow connection; the HUD says how
+  far behind the others are drawn (and when one is being predicted).
+
 ## 0.7.0 (2026-11-06)
 
 - **`HawkesNetStartScreen`: a start screen in one component.** Name and room fields, a Join button (or Enter), and a status
