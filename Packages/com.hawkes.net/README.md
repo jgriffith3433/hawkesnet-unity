@@ -22,6 +22,13 @@ is for servers, bots and tests only: never ship a key in a game.
 4. Try it: Package Manager > Hawkes Net > Samples > **Avatars** (one script on an empty GameObject: a capsule you walk
    with WASD and everyone else's). Build for WebGL and open two tabs.
 
+5. **A start screen, ready made:** put `HawkesNetStartScreen` next to your `HawkesNetAvatars` (turn its *Join On Enable* off, set
+   the start screen's *Avatars*), or call `startScreen.Attach(lobby, "lobby")` for your own `HawkesNetLobby`. Players get a
+   name and a room field, a Join button (or Enter), and one status line: *Connecting...*, *Online · room x · 2 others*, or
+   *Failed: the room refused the join (ticket: ...). Trying again in 8 s.* with a Try again button; once online it is a
+   status bar with Leave (Esc). The name is remembered and can come from the link (`?name=Ada`). Read `Blocking` to ignore
+   the keyboard while the player types. With no `project` or `ticketUrl` set it shows the first-run steps instead of failing.
+
 Every room runs on the relay. Peer to peer is a project setting (off by default) for a game that asks for `transport = "auto"`.
 
 ## 1. Shared rooms: `HawkesNetLobby` (the standard way)

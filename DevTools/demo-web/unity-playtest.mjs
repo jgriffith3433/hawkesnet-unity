@@ -5,6 +5,17 @@
 import { installNetPlaytest } from './net-playtest.mjs';
 
 const LIVE = 'https://net.hawkesgen.ai';
+// What the Unity side says about its start screen: HawkesNetStartScreen logs "[HawkesNetStart] <status> | <line>" to the
+// browser console each time the status line changes (and "start screen up" when it shows). Kept from page load on.
+const startLog = [];
+for (const m of ['log', 'info', 'warn', 'error']) {
+  const orig = console[m].bind(console);
+  console[m] = (...a) => {
+    try { const t = a.map(String).join(' '); const i = t.indexOf('[HawkesNetStart] '); if (i >= 0) startLog.push({ at: performance.now(), text: t.slice(i + 17).split('\n')[0].trim() }); } catch { /* never in the way */ }
+    return orig(...a);
+  };
+}
+const startUp = () => startLog.some((l) => l.text.startsWith('start screen up'));
 const endpoint = () => (/^https?:\/\/[a-z0-9.-]+(:\d+)?$/i.test(String(globalThis.HAWKES_NET_ENDPOINT || '')) ? globalThis.HAWKES_NET_ENDPOINT : LIVE);
 // The Unity player's room: the newest join the bridge holds that has a room.
 const slot = () => { const rooms = globalThis.__hawkesNet?.rooms ?? {}; return Object.values(rooms).filter((s) => s && !s.gone && s.net).pop() ?? null; };
@@ -24,12 +35,20 @@ const main = () => {
   return net;
 };
 // Unity reads the keyboard from the page: a press on the canvas and the window, with the key's code as a browser sends it.
-const CODES = { d: ['KeyD', 68], w: ['KeyW', 87], 1: ['Digit1', 49], 2: ['Digit2', 50], 3: ['Digit3', 51] };
+const CODES = { d: ['KeyD', 68], w: ['KeyW', 87], 1: ['Digit1', 49], 2: ['Digit2', 50], 3: ['Digit3', 51],
+  Enter: ['Enter', 13], Escape: ['Escape', 27], Backspace: ['Backspace', 8] };
 const key = (k, down) => {
-  const [code, keyCode] = CODES[k];
+  const [code, keyCode] = CODES[k] ?? [/^[a-z]$/i.test(k) ? `Key${k.toUpperCase()}` : '', k.toUpperCase().charCodeAt(0)];
   const init = { key: k, code, keyCode, which: keyCode, bubbles: true, cancelable: true };
   for (const t of [document.querySelector('canvas'), document, window]) t?.dispatchEvent(new KeyboardEvent(down ? 'keydown' : 'keyup', init));
 };
+const tap = async (k) => { document.querySelector('canvas')?.focus?.(); key(k, true); await new Promise((r) => setTimeout(r, 60)); key(k, false); await new Promise((r) => setTimeout(r, 60)); };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const waitFor = async (test, ms, what) => {
+  const t0 = performance.now();
+  for (;;) { let v = false; try { v = test(); } catch { /* not yet */ } if (v) return performance.now() - t0; if (performance.now() - t0 > ms) throw new Error(`timed out after ${Math.round(ms / 1000)} s waiting for ${typeof what === 'function' ? what() : what}`); await sleep(100); }
+};
+const online = () => { const n = slot()?.net; return Boolean(n && (n.ready === true || n.status === 'online')); };
 
 // Colour, name and emotes: the Unity player (its colour and emote ride in its pose) against the bot, both ways.
 const hueOf = (hex) => {
@@ -72,10 +91,11 @@ async function avatarChecks({ check, main, bot, until, wait, metric }) {
   }
 }
 
-installNetPlaytest({
+const api = installNetPlaytest({
   product: 'hawkes-net-unity',
   where: endpoint().replace(/^https?:\/\//, ''),
-  ready: () => Boolean(globalThis.__hawkesNet),
+  // The page is ready once Unity shows its start screen (nothing is joined before the player presses Join).
+  ready: () => Boolean(globalThis.__hawkesNet) || startUp(),
   main,
   openBot: async () => {
     const { join } = await import(`${endpoint()}/sdk/hawkes-net@1.mjs`);
@@ -99,3 +119,147 @@ installNetPlaytest({
   botPose: (u) => [-3 + 6 * u, 1, 3],
   tolerance: 0.3,
 });
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The start screen. The player's page opens on a start screen (name, room, Join), so every scenario first joins it with a
+// real key press (Enter), and "start-screen" plays it through: name typed, Join, the status line going connecting ->
+// online, then a failed join (the ticket request refused) with its reason, and joining again.
+const baseStart = api.start.bind(api);
+const joinFromStartScreen = async () => {
+  await waitFor(() => online() || startUp(), 120000, 'Unity to show the start screen');
+  const t0 = performance.now();
+  while (!online() && performance.now() - t0 < 60000) { await tap('Enter'); await sleep(1500); }
+};
+const baseScenarios = api.scenarios.bind(api);
+api.scenarios = () => [...baseScenarios(), { id: 'start-screen', title: 'Start screen: name, Join, status connecting/online, a failed join with its reason', seconds: 90, tags: ['full', 'ui'],
+  description: 'Types a name on the start screen, presses Join and checks the status line goes connecting then online and the other players see the name; then refuses the ticket request, checks the status says Failed with the reason, and joins again.' }];
+
+let sr = null; // the start-screen run
+const r1 = (n) => Math.round(n * 10) / 10;
+const srNow = () => (performance.now() - sr.t0) / 1000;
+const srEvent = (type, detail) => sr.events.push({ t: r1(srNow()), type, ...(detail === undefined ? {} : { detail: String(detail) }) });
+const srPanel = () => {
+  let el = document.getElementById('hawkes-net-playtest');
+  if (!el) { el = document.createElement('div'); el.id = 'hawkes-net-playtest'; el.style.cssText = 'position:fixed;right:12px;top:12px;z-index:99999;max-width:380px;background:rgba(10,12,16,.82);color:#e8eaed;font:12px/1.5 ui-monospace,Menlo,monospace;padding:8px 12px;border-radius:8px;pointer-events:none'; document.body.appendChild(el); }
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  const head = sr.done ? (sr.state.status === 'won' ? '<b style="color:#9fe870">PASS</b>' : '<b style="color:#ff7b72">FAIL</b>') : '<b style="color:#ffd84d">running</b>';
+  el.innerHTML = `Playtest start-screen · ${head}<br>` + sr.lines.map((l) => `${l.ok === true ? '<span style="color:#9fe870">✓</span>' : l.ok === false ? '<span style="color:#ff7b72">✗</span>' : '…'} ${esc(l.text)}${l.why ? ` <span style="color:#9aa1ad">(${esc(l.why)})</span>` : ''}`).join('<br>');
+};
+async function srCheck(text, fn) {
+  const line = { text, ok: null, why: '' };
+  sr.lines.push(line); srPanel(); srEvent('check', text);
+  try { const why = await fn(); line.ok = true; line.why = typeof why === 'string' ? why : ''; srEvent('pass', text); sr.metrics.checksPassed = (sr.metrics.checksPassed ?? 0) + 1; }
+  catch (e) { line.ok = false; line.why = String(e?.message ?? e).slice(0, 220); sr.problems.push({ severity: 'bug', message: `${text}: ${line.why}` }); srEvent('fail', text); sr.metrics.checksFailed = (sr.metrics.checksFailed ?? 0) + 1; }
+  srPanel();
+  return line.ok;
+}
+const statusLines = (from) => startLog.filter((l) => l.at >= from).map((l) => l.text);
+
+async function startScreen() {
+  const typed = 'Ada Bot';
+  let defaultName = '';
+  if (!await srCheck('The start screen is up before anyone has joined', async () => {
+    await waitFor(startUp, 120000, 'Unity to show the start screen (no "[HawkesNetStart] start screen up" in the console)');
+    if (online()) throw new Error('the page had already joined a room without the player pressing Join');
+    defaultName = /name (.+), room/.exec(startLog.find((l) => l.text.startsWith('start screen up')).text)?.[1] ?? '';
+    srEvent('log', `start screen up, prefilled name "${defaultName}"`);
+    return `prefilled name "${defaultName}"`;
+  })) return;
+  sr.progress = 0.15;
+
+  let name = typed;
+  await srCheck('A name is typed into the start screen', async () => {
+    // Real key presses into the name field (focused when the screen shows): clear the prefilled name, type a new one.
+    for (let i = 0; i < Math.max(30, defaultName.length + 5); i++) await tap('Backspace');
+    for (const ch of typed) { if (ch === ' ') { await tap(' '); continue; } await tap(ch); }
+    srEvent('typed', typed);
+    return `typed "${typed}"`;
+  });
+  sr.progress = 0.3;
+
+  const mark = performance.now();
+  if (!await srCheck('Pressing Join connects: the status says connecting, then online', async () => {
+    await tap('Enter');
+    const ms = await waitFor(online, 30000, () => `the room to come online (status lines: ${statusLines(mark).join(' / ') || 'none'})`);
+    const lines = statusLines(mark);
+    const iC = lines.findIndex((t) => t.startsWith('connecting')), iO = lines.findIndex((t) => t.startsWith('online'));
+    if (iC < 0) throw new Error(`no "connecting" status was shown (lines: ${lines.join(' / ')})`);
+    if (iO < iC) throw new Error(`"online" did not follow "connecting" (lines: ${lines.join(' / ')})`);
+    sr.metrics.joinMs = Math.round(ms);
+    srEvent('status', lines.join(' -> '));
+    return lines.join(' -> ');
+  })) return;
+  sr.progress = 0.5;
+
+  await srCheck('The room knows the player by the name from the start screen', async () => {
+    const net = slot().net;
+    await waitFor(() => net.peers?.get(net.id), 10000, 'the room to list this player');
+    const got = net.peers.get(net.id)?.name ?? net.peers.get(net.id);
+    // Typing through scripted key events is accepted by some browsers' canvases and not others: when the typed name did
+    // not arrive, the prefilled name must have, and that is said as a warning (the page took a name, but not ours).
+    if (got === typed) { name = typed; return `"${got}"`; }
+    if (got && got === defaultName) { sr.problems.push({ severity: 'warning', message: `the typed name did not reach the field (the player joined as the prefilled "${got}")` }); return `joined as the prefilled "${got}" (typing was not accepted)`; }
+    throw new Error(`expected "${typed}" (or the prefilled "${defaultName}"), the room has "${got}"`);
+  });
+  sr.progress = 0.65;
+
+  // A failed join: leave (Esc), have the ticket request refused, press Join again.
+  const realFetch = globalThis.fetch;
+  let refused = 0;
+  const mark2 = performance.now();
+  try {
+    if (!await srCheck('A failed join says Failed, with the reason', async () => {
+      globalThis.fetch = (input, init) => {
+        const url = String(input?.url ?? input);
+        if (/\/v1\/net\/ticket/.test(url)) { refused++; return Promise.resolve(new Response(JSON.stringify({ error: 'forbidden' }), { status: 403, headers: { 'Content-Type': 'application/json' } })); }
+        return realFetch(input, init);
+      };
+      await tap('Escape');
+      await waitFor(() => statusLines(mark2).some((t) => t.startsWith('off |')), 10000, 'the start screen to come back after Esc (status off)');
+      await tap('Enter');
+      await waitFor(() => statusLines(mark2).some((t) => t.startsWith('offline')), 30000, () => `a Failed status (lines: ${statusLines(mark2).join(' / ')}; ticket requests refused: ${refused})`);
+      const failed = statusLines(mark2).find((t) => t.startsWith('offline'));
+      if (!/Failed: .+\(.+\)/.test(failed)) throw new Error(`the failed status has no reason: ${failed}`);
+      sr.metrics.refusedTicketRequests = refused;
+      srEvent('status', failed);
+      return failed.replace(/^offline \| /, '');
+    })) return;
+    sr.progress = 0.85;
+  } finally { globalThis.fetch = realFetch; }
+
+  await srCheck('Try again joins once the refusal is gone, with the same name', async () => {
+    const mark3 = performance.now();
+    await tap('Enter');
+    await waitFor(online, 40000, () => `the room to come online again (lines: ${statusLines(mark3).join(' / ')})`);
+    const net = slot().net;
+    const got = net.peers?.get(net.id)?.name ?? net.peers?.get(net.id);
+    if (got !== name && got !== defaultName) throw new Error(`the name changed on the way (${got})`);
+    return `online as "${got}"`;
+  });
+  sr.progress = 1;
+}
+
+api.start = async (id, options = {}) => {
+  if (id !== 'start-screen') {
+    try { await joinFromStartScreen(); } catch (e) { /* the scenario's own connect check says what is missing */ }
+    return baseStart(id, options);
+  }
+  if (sr && !sr.done) sr.done = true;
+  sr = { t0: performance.now(), done: false, lines: [], events: [], problems: [], metrics: {}, progress: 0, state: { ready: true, status: 'running', progress: 0, scene: 'Demo' } };
+  const mine = sr;
+  srEvent('start', id); srEvent('scene', 'Demo'); srPanel();
+  try { await startScreen(); } catch (e) { sr.problems.push({ severity: 'bug', message: `bot error: ${e?.message ?? e}` }); }
+  mine.done = true; mine.seconds = srNow();
+  mine.state.status = mine.lines.length && mine.lines.every((l) => l.ok) ? 'won' : 'lost';
+  mine.state.note = mine.state.status === 'won' ? 'all checks passed' : `${mine.lines.filter((l) => l.ok === false).length} check(s) failed`;
+  srEvent('finish', mine.state.status); srPanel();
+};
+const baseState = api.state.bind(api), baseReport = api.report.bind(api), baseStop = api.stop.bind(api);
+api.state = () => (sr && !sr.done ? { ...sr.state, progress: sr.progress, metrics: { ...sr.metrics } }
+  : sr && api.__last === 'start-screen' ? { ...sr.state, progress: sr.progress, ready: true, metrics: { ...sr.metrics } } : baseState());
+api.report = () => (sr && api.__last === 'start-screen' ? { scenario: 'start-screen', outcome: sr.done ? sr.state.status : 'stuck', seconds: r1(sr.seconds ?? srNow()), metrics: { ...sr.metrics },
+  events: sr.events.slice(), problems: sr.problems.slice(), log: [...sr.lines.map((l) => `${l.ok ? 'PASS' : l.ok === false ? 'FAIL' : '...'} ${l.text}${l.why ? ` (${l.why})` : ''}`), ...startLog.map((l) => `console ${l.text}`)] } : baseReport());
+api.stop = () => { if (sr && !sr.done) { sr.done = true; sr.state.status = 'done'; } baseStop(); };
+// Which scenario was started last decides what state() and report() answer.
+const startAny = api.start;
+api.start = (id, options) => { api.__last = id; return startAny(id, options); };
