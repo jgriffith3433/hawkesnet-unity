@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.1 (2026-11-06)
+
+- **Fix: a page can skip the start screen.** `HawkesNetStartScreen` joins at once, with the name and room in the fields,
+  when the page's address has `?autojoin=1` or a playtest run (`?playtest=<scenario>`, except `start-screen`). Enter now
+  also joins from `Update` (legacy input), so a key press sent by a script reaches Join even when the name field takes
+  the event in `OnGUI`. Hawkes Studio's smoke run was stuck on the form and never connected.
+
 ## 0.8.0 (2026-11-06)
 
 - **Smooth remote avatars: `HawkesNetTrack`.** `HawkesNetAvatars` now plays every other player through a track (the web
