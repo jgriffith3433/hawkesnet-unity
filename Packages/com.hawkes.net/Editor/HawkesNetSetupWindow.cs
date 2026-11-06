@@ -56,6 +56,13 @@ namespace Hawkes.Editor
 #endif
         }
 
+        // Build Settings is "Build Profiles" from Unity 6; try both menu names, so nothing here depends on an internal type.
+        static void OpenBuildSettings()
+        {
+            if (!EditorApplication.ExecuteMenuItem("File/Build Profiles") && !EditorApplication.ExecuteMenuItem("File/Build Settings..."))
+                Debug.Log("Hawkes Net: open File > Build Settings (or Build Profiles) and pick WebGL.");
+        }
+
         void OnGUI()
         {
             scroll = EditorGUILayout.BeginScrollView(scroll);
@@ -113,7 +120,7 @@ namespace Hawkes.Editor
             else
             {
                 Row(Level.Warn, "Active build target is " + EditorUserBuildSettings.activeBuildTarget, "Fine for the Editor and desktop (the managed client). For a WebGL game, switch the target in Build Settings.");
-                if (GUILayout.Button("Open Build Settings")) EditorWindow.GetWindow(System.Type.GetType("UnityEditor.BuildPlayerWindow,UnityEditor"));
+                if (GUILayout.Button("Open Build Settings")) OpenBuildSettings();
             }
             GUILayout.Space(8);
 

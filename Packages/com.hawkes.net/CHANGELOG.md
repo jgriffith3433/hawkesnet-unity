@@ -4,7 +4,7 @@
 
 - **Setup window.** Window > Hawkes Net > Setup (Editor only, `Hawkes.Net.Editor`) checks the project and scene for a
   first join: flags a missing or odd project id (`usr_...`), an Avatars component with no Local player, the build target
-  and live hosts, and can set the id on the scene's Avatars. It redraws when the scene or project changes.
+  and live hosts, and can set the id on the scene's Avatars. It redraws when the scene or project changes. "Open Build Settings" opens Build Settings (Build Profiles in Unity 6) by menu name.
 - **Quickstart.** Both READMEs open with a 5-step quickstart (install, project, setup window, sample, Play).
 
 ## 0.8.1 (2026-11-06)
