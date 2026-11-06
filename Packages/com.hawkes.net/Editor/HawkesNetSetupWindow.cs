@@ -26,6 +26,11 @@ namespace Hawkes.Editor
 
         void OnEnable() { projectId = EditorPrefs.GetString(Key(), ""); }
 
+        // The checks read the open scene: redraw when it, the selection or the build target changes.
+        void OnHierarchyChange() { Repaint(); }
+        void OnProjectChange() { Repaint(); }
+        void OnFocus() { Repaint(); }
+
         enum Level { Ok, Warn, Missing }
 
         static void Row(Level level, string title, string detail)
