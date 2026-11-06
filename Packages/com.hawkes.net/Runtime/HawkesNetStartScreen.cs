@@ -51,6 +51,8 @@ namespace Hawkes
         bool entered; // joined and online at least once since the last Join: the screen shrinks to the bar
         string lastLogged = "";
         bool focused;
+        bool autoTried;
+        int joinedFrame = -1;
         GUIStyle title, label, field, button, line, small;
         Texture2D white;
 
@@ -80,9 +82,33 @@ namespace Hawkes
         void Update()
         {
             var l = Lobby;
-            if (l == null || l == hooked) return;
-            hooked = l;
-            l.StatusChanged += _ => OnStatus();
+            if (l == null) return;
+            if (l != hooked)
+            {
+                hooked = l;
+                l.StatusChanged += _ => OnStatus();
+            }
+            if (entered) return;
+
+            // A link (or a test) can skip the form: ?autojoin=1 joins at once with the name and room in the fields. A
+            // playtest run (?playtest=<scenario>, Hawkes Studio's bot) does the same, except "start-screen", which plays
+            // the form itself.
+            if (!autoTried && (l.Status == "off" || l.Status == ""))
+            {
+                autoTried = true;
+                string auto = HawkesNetLobby.Query("autojoin"), pt = HawkesNetLobby.Query("playtest");
+                if ((auto.Length > 0 && auto != "0" && auto != "false") || (pt.Length > 0 && pt != "start-screen")) { Debug.Log("[HawkesNetStart] joining without the form (?autojoin / ?playtest)"); Join(); return; }
+            }
+
+            // Enter joins even when the name field swallows the key event in OnGUI (a key press sent by a script, as a
+            // test does, can).
+#if ENABLE_LEGACY_INPUT_MANAGER
+            try
+            {
+                if (l.Status != "connecting" && l.Status != "reconnecting" && (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))) Join();
+            }
+            catch (InvalidOperationException) { /* the Input System package only: the button and OnGUI's Enter remain */ }
+#endif
         }
 
         void OnStatus()
@@ -182,6 +208,8 @@ namespace Hawkes
             l.Options.name = name;
             if (Avatars != null) Avatars.PlayerName = name;
             entered = false;
+            if (joinedFrame == Time.frameCount) return true; // Enter reached both OnGUI and Update in one frame
+            joinedFrame = Time.frameCount;
             l.Leave();
             l.Join(room);
             return true;
