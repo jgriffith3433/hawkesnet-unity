@@ -20,6 +20,7 @@ const endpoint = () => (/^https?:\/\/[a-z0-9.-]+(:\d+)?$/i.test(String(globalThi
 // The Unity player's room: the newest join the bridge holds that has a room.
 const slot = () => { const rooms = globalThis.__hawkesNet?.rooms ?? {}; return Object.values(rooms).filter((s) => s && !s.gone && s.net).pop() ?? null; };
 let sent = null;
+let sentYaw = 0; // which way the Unity player faces (radians, Unity's yaw: 0 is +z)
 let sentExtra = null; // the extra values (colour, emote) the Unity player sent with its newest pose
 // The second player's look, sent with every pose it makes: an orange capsule, no emote yet (the sample's Style).
 const botStyle = { c: '#ff9d2e', e: 0, n: 0 };
@@ -29,7 +30,7 @@ const main = () => {
   // What the Unity player sends (HawkesNet_Pose calls net.pose): its own place, as the other player should see it.
   if (net && !net.__hnptPose) {
     const pose = net.pose.bind(net);
-    net.pose = (p, y, e) => { sent = Array.from(p).slice(0, 3); sentExtra = e && typeof e === 'object' ? { ...e } : null; return pose(p, y, e); };
+    net.pose = (p, y, e) => { sent = Array.from(p).slice(0, 3); sentYaw = Number(y) || 0; sentExtra = e && typeof e === 'object' ? { ...e } : null; return pose(p, y, e); };
     net.__hnptPose = true;
   }
   return net;
@@ -91,21 +92,24 @@ async function avatarChecks({ check, main, bot, until, wait, metric }) {
   }
 }
 
+// The second player, in the Unity player's room: what the bot is in every scenario.
+const openBotPlayer = async () => {
+  const { join } = await import(`${endpoint()}/sdk/hawkes-net@1.mjs`);
+  const m = main();
+  const b = await join(m.room, { project: 'netdemo', endpoint: endpoint(), transport: m.transport === 'p2p' ? 'auto' : 'relay', name: 'Playtest bot', role: 'player', sub: `pt-${Math.random()}`, log: false });
+  // Every pose the bot makes carries its look, as the sample's players do.
+  const pose = b.pose.bind(b);
+  b.pose = (p, y, e) => pose(p, y, { ...botStyle, ...(e || {}) });
+  return b;
+};
+
 const api = installNetPlaytest({
   product: 'hawkes-net-unity',
   where: endpoint().replace(/^https?:\/\//, ''),
   // The page is ready once Unity shows its start screen (nothing is joined before the player presses Join).
   ready: () => Boolean(globalThis.__hawkesNet) || startUp(),
   main,
-  openBot: async () => {
-    const { join } = await import(`${endpoint()}/sdk/hawkes-net@1.mjs`);
-    const m = main();
-    const b = await join(m.room, { project: 'netdemo', endpoint: endpoint(), transport: m.transport === 'p2p' ? 'auto' : 'relay', name: 'Playtest bot', role: 'player', sub: `pt-${Math.random()}`, log: false });
-    // Every pose the bot makes carries its look, as the sample's players do.
-    const pose = b.pose.bind(b);
-    b.pose = (p, y, e) => pose(p, y, { ...botStyle, ...(e || {}) });
-    return b;
-  },
+  openBot: openBotPlayer,
   extra: avatarChecks,
   drive: async (step) => {
     document.querySelector('canvas')?.focus?.();
@@ -132,7 +136,11 @@ const joinFromStartScreen = async () => {
 };
 const baseScenarios = api.scenarios.bind(api);
 api.scenarios = () => [...baseScenarios(), { id: 'start-screen', title: 'Start screen: name, Join, status connecting/online, a failed join with its reason', seconds: 90, tags: ['full', 'ui'],
-  description: 'Types a name on the start screen, presses Join and checks the status line goes connecting then online and the other players see the name; then refuses the ticket request, checks the status says Failed with the reason, and joins again.' }];
+  description: 'Types a name on the start screen, presses Join and checks the status line goes connecting then online and the other players see the name; then refuses the ticket request, checks the status says Failed with the reason, and joins again.' },
+{ id: 'smooth', title: 'Smooth remote avatar: moves every frame, faces where it goes, no snapping at 150 ms latency', seconds: 60, tags: ['full', 'netcode'],
+  description: 'Joins from the start screen, opens a second player that walks a figure eight in front of the camera, and reads where Unity draws it every frame (window.__hawkesNet.watch): 6 s on the plain connection (it must move every frame, facing where it goes), then 10 s with 150 ms (+0-30 ms jitter) of simulated latency on the poses (no frame may step faster than twice its top speed or turn more than twice its top turn rate).' }];
+// The scenarios played here rather than by net-playtest.mjs: their own run, panel and report.
+const SIDE = ['start-screen', 'smooth'];
 
 let sr = null; // the start-screen run
 const r1 = (n) => Math.round(n * 10) / 10;
@@ -143,7 +151,7 @@ const srPanel = () => {
   if (!el) { el = document.createElement('div'); el.id = 'hawkes-net-playtest'; el.style.cssText = 'position:fixed;right:12px;top:12px;z-index:99999;max-width:380px;background:rgba(10,12,16,.82);color:#e8eaed;font:12px/1.5 ui-monospace,Menlo,monospace;padding:8px 12px;border-radius:8px;pointer-events:none'; document.body.appendChild(el); }
   const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
   const head = sr.done ? (sr.state.status === 'won' ? '<b style="color:#9fe870">PASS</b>' : '<b style="color:#ff7b72">FAIL</b>') : '<b style="color:#ffd84d">running</b>';
-  el.innerHTML = `Playtest start-screen · ${head}<br>` + sr.lines.map((l) => `${l.ok === true ? '<span style="color:#9fe870">✓</span>' : l.ok === false ? '<span style="color:#ff7b72">✗</span>' : '…'} ${esc(l.text)}${l.why ? ` <span style="color:#9aa1ad">(${esc(l.why)})</span>` : ''}`).join('<br>');
+  el.innerHTML = `Playtest ${esc(sr.id)} · ${head}<br>` + sr.lines.map((l) => `${l.ok === true ? '<span style="color:#9fe870">✓</span>' : l.ok === false ? '<span style="color:#ff7b72">✗</span>' : '…'} ${esc(l.text)}${l.why ? ` <span style="color:#9aa1ad">(${esc(l.why)})</span>` : ''}`).join('<br>');
 };
 async function srCheck(text, fn) {
   const line = { text, ok: null, why: '' };
@@ -239,16 +247,141 @@ async function startScreen() {
   sr.progress = 1;
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// "smooth": the other player's capsule as Unity draws it, frame by frame. HawkesNetAvatars tells the page where it drew
+// each remote every frame while window.__hawkesNet.watch is on (HawkesNet.jslib keeps them in window.__hawkesNet.frames),
+// so this checks the picture itself, not the poses the bridge received.
+const wrapDeg = (d) => ((d % 360) + 540) % 360 - 180;
+// The bot's walk: a figure eight 6 m wide and 3 m deep, 5 m in front of the Unity player, facing where it goes.
+const EIGHT_A = 3, EIGHT_W = 0.8;
+const eight = (ms, base, yaw0) => {
+  const t = (ms / 1000) * EIGHT_W;
+  const lx = EIGHT_A * Math.sin(t), lz = EIGHT_A * Math.sin(t) * Math.cos(t), dx = EIGHT_A * Math.cos(t), dz = EIGHT_A * Math.cos(2 * t);
+  const c = Math.cos(yaw0), sn = Math.sin(yaw0); // Unity's yaw turns +z towards +x
+  const ax = lx * c + (lz + 5) * sn, az = -lx * sn + (lz + 5) * c;
+  return { p: [base[0] + ax, base[1], base[2] + az], yaw: Math.atan2(dx, dz) + yaw0 };
+};
+// Its top speed (m/s) and turn rate (degrees a second), from the path itself.
+const eightLimits = (() => {
+  let speed = 0, turn = 0;
+  for (let ms = 0; ms < 8000; ms += 5) {
+    const a = eight(ms, [0, 0, 0], 0), b = eight(ms + 5, [0, 0, 0], 0);
+    speed = Math.max(speed, Math.hypot(b.p[0] - a.p[0], b.p[2] - a.p[2]) / 0.005);
+    turn = Math.max(turn, Math.abs(wrapDeg((b.yaw - a.yaw) * 180 / Math.PI)) / 0.005);
+  }
+  return { speed, turn };
+})();
+
+// What the frames say about one remote: frames seen, frames it did not move, steps that jump, how it faces.
+function framesOf(frames, id) {
+  const rows = frames.map((f) => ({ f: f.f, t: f.t, dt: Number(f.dt) || 16.7, it: (f.items || []).find((i) => i.id === id) })).filter((r) => r.it);
+  const out = { frames: 0, still: 0, snaps: 0, turnSnaps: 0, skipped: 0, topSpeed: 0, topTurn: 0, worstStep: '', fps: 0, delays: [], aheadFrames: 0, maxAhead: 0, facing: [] };
+  for (let i = 1; i < rows.length; i++) {
+    const a = rows[i - 1], b = rows[i];
+    if (b.f !== a.f + 1) { out.skipped++; continue; }
+    const dt = Math.max(1, b.dt), step = Math.hypot(b.it.p[0] - a.it.p[0], b.it.p[1] - a.it.p[1], b.it.p[2] - a.it.p[2]);
+    const turn = Math.abs(wrapDeg(b.it.y - a.it.y));
+    out.frames++;
+    if (step < 1e-4 && turn < 0.01) out.still++;
+    const speed = step / dt * 1000, rate = turn / dt * 1000;
+    if (step > Math.max(0.05, eightLimits.speed * 2 * dt / 1000)) { out.snaps++; out.worstStep = `${step.toFixed(2)} m in ${dt.toFixed(0)} ms at frame ${b.f}`; }
+    if (turn > Math.max(4, eightLimits.turn * 2 * dt / 1000)) { out.turnSnaps++; out.worstStep = `${turn.toFixed(1)} degrees in ${dt.toFixed(0)} ms at frame ${b.f}`; }
+    out.topSpeed = Math.max(out.topSpeed, speed); out.topTurn = Math.max(out.topTurn, rate);
+    out.delays.push(Number(b.it.d) || 0);
+    if ((Number(b.it.a) || 0) > 0) { out.aheadFrames++; out.maxAhead = Math.max(out.maxAhead, Number(b.it.a)); }
+    // Facing: the drawn yaw against the direction the drawn capsule is going.
+    if (speed > 0.5) out.facing.push(Math.abs(wrapDeg(b.it.y - Math.atan2(b.it.p[0] - a.it.p[0], b.it.p[2] - a.it.p[2]) * 180 / Math.PI)));
+  }
+  if (rows.length > 1) out.fps = (rows[rows.length - 1].f - rows[0].f) / Math.max(0.001, (rows[rows.length - 1].t - rows[0].t) / 1000);
+  const med = (xs) => { const s = [...xs].sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : 0; };
+  out.delay = med(out.delays); out.facingErr = med(out.facing);
+  return out;
+}
+
+let smoothBot = null, smoothTick = null;
+async function smooth() {
+  const S = () => globalThis.__hawkesNet;
+  if (!await srCheck('Connected to Hawkes Net from the start screen', async () => {
+    await joinFromStartScreen();
+    if (!online()) throw new Error('the room did not come online after pressing Join');
+    return slot().net.roomName ?? slot().net.room ?? 'online';
+  })) return;
+  sr.progress = 0.1;
+  const net = slot().net;
+  if (!await srCheck('A second player joined the same room', async () => {
+    smoothBot = await openBotPlayer();
+    const ms = await waitFor(() => (smoothBot.ready === true || smoothBot.status === 'online') && net.peers.has(smoothBot.id), 15000, 'both players to see each other');
+    sr.metrics.secondJoinMs = Math.round(ms);
+    return `${Math.round(ms)} ms`;
+  })) return;
+  sr.progress = 0.2;
+  const id = smoothBot.id;
+  // The bot walks its figure eight, a pose each 16 ms (the SDK sends the newest about 30 times a second).
+  await waitFor(() => sent, 5000, 'the Unity player to send its place');
+  const base = sent.slice(), yaw0 = sentYaw, t0 = performance.now();
+  srEvent('walk', `figure eight 5 m ahead of the Unity player: top ${eightLimits.speed.toFixed(1)} m/s, ${eightLimits.turn.toFixed(0)} deg/s`);
+  smoothTick = setInterval(() => { try { const w = eight(performance.now() - t0, base, yaw0); smoothBot.pose(w.p, w.yaw); } catch { /* left */ } }, 16);
+  S().watch = true;
+  await waitFor(() => (S().frames || []).some((f) => (f.items || []).some((i) => i.id === id)), 10000, 'Unity to draw the second player');
+  await sleep(1500); // the track learns the connection
+  sr.progress = 0.3;
+
+  // 1. The plain connection: every frame moves, facing where it goes.
+  S().frames = [];
+  srEvent('phase', 'plain connection, 6 s');
+  await sleep(6000);
+  const a = framesOf(S().frames, id);
+  Object.assign(sr.metrics, { fps: Math.round(a.fps), framesPlain: a.frames, stillFramesPlain: a.still, snapsPlain: a.snaps + a.turnSnaps, delayPlainMs: Math.round(a.delay), facingErrDeg: Math.round(a.facingErr * 10) / 10 });
+  await srCheck(`The other player's avatar moves every frame (${Math.round(a.fps)} fps)`, async () => {
+    if (a.frames < 120) throw new Error(`only ${a.frames} frames were drawn in 6 s`);
+    if (a.still > 0) throw new Error(`it stood still in ${a.still} of ${a.frames} frames while the player walked`);
+    if (a.fps < 50) sr.problems.push({ severity: 'warning', message: `the page ran at ${Math.round(a.fps)} fps (the criterion is 60): the avatar moved in all of those frames` });
+    return `moved in all ${a.frames} frames at ${Math.round(a.fps)} fps, ${Math.round(a.delay)} ms behind`;
+  });
+  await srCheck('It faces where it walks (look direction)', async () => {
+    if (a.facing.length < 60) throw new Error(`too few moving frames to tell (${a.facing.length})`);
+    if (a.facingErr > 15) throw new Error(`its facing is ${a.facingErr.toFixed(1)} degrees off its path (median)`);
+    if (a.snaps + a.turnSnaps > 0) throw new Error(`it jumped ${a.snaps + a.turnSnaps} times even without latency (${a.worstStep})`);
+    return `${a.facingErr.toFixed(1)} degrees off its path (median), top turn ${a.topTurn.toFixed(0)} deg/s`;
+  });
+  sr.progress = 0.6;
+
+  // 2. 150 ms of latency (and up to 30 ms of jitter) on every pose, from the moment it starts.
+  S().frames = [];
+  S().lag = 150; S().jitter = 30;
+  srEvent('lag', '150 ms + 0-30 ms jitter on the poses');
+  await sleep(10000);
+  const b = framesOf(S().frames, id);
+  Object.assign(sr.metrics, { framesLag: b.frames, stillFramesLag: b.still, snapsLag: b.snaps + b.turnSnaps, delayLagMs: Math.round(b.delay), extrapolatedFrames: b.aheadFrames, maxAheadMs: Math.round(b.maxAhead), topSpeedLag: Math.round(b.topSpeed * 10) / 10 });
+  await srCheck('No visible snapping with 150 ms of latency', async () => {
+    if (b.frames < 200) throw new Error(`only ${b.frames} frames were drawn in 10 s`);
+    if (b.delay < 150) throw new Error(`the latency did not take (drawn only ${Math.round(b.delay)} ms behind)`);
+    if (b.snaps + b.turnSnaps > 0) throw new Error(`${b.snaps} jumps and ${b.turnSnaps} sudden turns in ${b.frames} frames (worst ${b.worstStep})`);
+    if (b.still > 0) throw new Error(`it stood still in ${b.still} of ${b.frames} frames`);
+    return `${b.frames} frames, top ${b.topSpeed.toFixed(1)} m/s (walks at up to ${eightLimits.speed.toFixed(1)}), ${Math.round(b.delay)} ms behind, ${b.aheadFrames} frames predicted (up to ${Math.round(b.maxAhead)} ms)`;
+  });
+  sr.progress = 0.95;
+}
+const smoothEnd = async () => {
+  const S = globalThis.__hawkesNet;
+  if (S) { S.watch = false; S.lag = 0; S.jitter = 0; }
+  if (smoothTick) { clearInterval(smoothTick); smoothTick = null; }
+  if (smoothBot) { const b = smoothBot; smoothBot = null; try { await b.leave(); } catch { /* gone */ } }
+};
+
 api.start = async (id, options = {}) => {
-  if (id !== 'start-screen') {
+  if (!SIDE.includes(id)) {
     try { await joinFromStartScreen(); } catch (e) { /* the scenario's own connect check says what is missing */ }
     return baseStart(id, options);
   }
   if (sr && !sr.done) sr.done = true;
-  sr = { t0: performance.now(), done: false, lines: [], events: [], problems: [], metrics: {}, progress: 0, state: { ready: true, status: 'running', progress: 0, scene: 'Demo' } };
+  await smoothEnd();
+  sr = { id, t0: performance.now(), done: false, lines: [], events: [], problems: [], metrics: {}, progress: 0, state: { ready: true, status: 'running', progress: 0, scene: 'Demo' } };
   const mine = sr;
   srEvent('start', id); srEvent('scene', 'Demo'); srPanel();
-  try { await startScreen(); } catch (e) { sr.problems.push({ severity: 'bug', message: `bot error: ${e?.message ?? e}` }); }
+  try { await (id === 'smooth' ? smooth() : startScreen()); } catch (e) { sr.problems.push({ severity: 'bug', message: `bot error: ${e?.message ?? e}` }); }
+  finally { if (id === 'smooth') await smoothEnd(); }
+  if (mine !== sr) return;
   mine.done = true; mine.seconds = srNow();
   mine.state.status = mine.lines.length && mine.lines.every((l) => l.ok) ? 'won' : 'lost';
   mine.state.note = mine.state.status === 'won' ? 'all checks passed' : `${mine.lines.filter((l) => l.ok === false).length} check(s) failed`;
@@ -256,10 +389,10 @@ api.start = async (id, options = {}) => {
 };
 const baseState = api.state.bind(api), baseReport = api.report.bind(api), baseStop = api.stop.bind(api);
 api.state = () => (sr && !sr.done ? { ...sr.state, progress: sr.progress, metrics: { ...sr.metrics } }
-  : sr && api.__last === 'start-screen' ? { ...sr.state, progress: sr.progress, ready: true, metrics: { ...sr.metrics } } : baseState());
-api.report = () => (sr && api.__last === 'start-screen' ? { scenario: 'start-screen', outcome: sr.done ? sr.state.status : 'stuck', seconds: r1(sr.seconds ?? srNow()), metrics: { ...sr.metrics },
+  : sr && SIDE.includes(api.__last) ? { ...sr.state, progress: sr.progress, ready: true, metrics: { ...sr.metrics } } : baseState());
+api.report = () => (sr && SIDE.includes(api.__last) ? { scenario: sr.id, outcome: sr.done ? sr.state.status : 'stuck', seconds: r1(sr.seconds ?? srNow()), metrics: { ...sr.metrics },
   events: sr.events.slice(), problems: sr.problems.slice(), log: [...sr.lines.map((l) => `${l.ok ? 'PASS' : l.ok === false ? 'FAIL' : '...'} ${l.text}${l.why ? ` (${l.why})` : ''}`), ...startLog.map((l) => `console ${l.text}`)] } : baseReport());
-api.stop = () => { if (sr && !sr.done) { sr.done = true; sr.state.status = 'done'; } baseStop(); };
+api.stop = () => { if (sr && !sr.done) { sr.done = true; sr.state.status = 'done'; } smoothEnd(); baseStop(); };
 // Which scenario was started last decides what state() and report() answer.
 const startAny = api.start;
 api.start = (id, options) => { api.__last = id; return startAny(id, options); };

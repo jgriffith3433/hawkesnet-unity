@@ -27,7 +27,8 @@ lobby.Join("lobby");
 
 | Path | What |
 |---|---|
-| `Packages/com.hawkes.net/` | **The package** (what ships): `Runtime/HawkesNet.cs` (the room), `HawkesNetLobby.cs`, `HawkesNetAvatars.cs`, `HawkesNetClient.cs` (the managed client: Editor and desktop), `Plugins/WebGL/HawkesNet.jslib` (the web SDK's bridge), `Samples~/Avatars` |
+| `Packages/com.hawkes.net/` | **The package** (what ships): `Runtime/HawkesNet.cs` (the room), `HawkesNetLobby.cs`, `HawkesNetAvatars.cs`, `HawkesNetTrack.cs` (smooth remote avatars), `HawkesNetClient.cs` (the managed client: Editor and desktop), `Plugins/WebGL/HawkesNet.jslib` (the web SDK's bridge), `Samples~/Avatars` |
+| `DevTools/TrackTest/` | `HawkesNetTrack` (smooth remote avatars) with plain `dotnet`: a figure-eight walker at 60 fps through 150 ms of latency, jitter, a stall, a clock correction; make its `.csproj` like ManagedTest's (Compile `Runtime/HawkesNetTrack.cs`), then `dotnet run --project DevTools/TrackTest` |
 | `DevTools/ManagedTest/` | The managed client end to end with plain `dotnet`, against a Hawkes Net service: `dotnet run --project DevTools/ManagedTest -- http://127.0.0.1:8786` |
 | `DevTools/make_unitypackage.py` | The Asset Store `.unitypackage` (the package as `Assets/HawkesNet`), built without Unity |
 | `PUBLISHING.md`, `LISTING.md` | Uploading to the Asset Store, and the listing's text |

@@ -55,9 +55,20 @@ mergeInto(LibraryManager.library, {
           if (k === 'p' || k === 'y' || s[k] === null || s[k] === undefined) continue;
           (extra = extra || {})[k] = s[k];
         }
-        slot.poses[peer] = { p: [p[0], p[1], p[2]], y: s.y || 0, at: at || 0, e: extra ? JSON.stringify(extra) : '' };
-        slot.changed[peer] = true;
-        slot.dirty = true;
+        var pose = { p: [p[0], p[1], p[2]], y: s.y || 0, at: at || 0, e: extra ? JSON.stringify(extra) : '' };
+        var give = function () {
+          if (slot.gone || (net.peers && net.peers.has && !net.peers.has(peer))) return; // left meanwhile
+          slot.poses[peer] = pose;
+          slot.changed[peer] = true;
+          slot.dirty = true;
+        };
+        // A simulated slow connection (HawkesNet.SimulatedLatency, or the page's window.__hawkesNet.lag / .jitter, ms):
+        // the pose reaches the game that much later, still in order.
+        var lag = Math.max(0, +S.lag || 0), jit = Math.max(0, +S.jitter || 0);
+        if (!lag && !jit && !(slot.heldUntil > performance.now())) return give();
+        var due = Math.max(slot.heldUntil || 0, performance.now() + lag + Math.random() * jit);
+        slot.heldUntil = due;
+        setTimeout(give, due - performance.now());
       });
       net.when('peer:join', function (p) { tell('join', who(p)); });
       net.when('peer:leave', function (x) { delete slot.poses[x.peer.id]; delete slot.changed[x.peer.id]; tell('leave', { peer: x.peer.id, name: x.peer.name || '', reason: x.reason || '' }); });
@@ -185,6 +196,32 @@ mergeInto(LibraryManager.library, {
       S.bgStop = m.background(step);
     }).catch(function (e) { console.warn('[HawkesNet] RunInBackground: the SDK did not load (' + ((e && e.message) || e) + ')'); });
     return 1;
+  },
+
+  // Testing a slow connection: the others' poses reach the game this much later (ms), plus up to jitter more, in order.
+  HawkesNet_Simulate: function (latency, jitter) {
+    var S = window.__hawkesNet = window.__hawkesNet || { rooms: {} };
+    S.lag = latency > 0 ? latency : 0;
+    S.jitter = jitter > 0 ? jitter : 0;
+  },
+
+  // A tool in the page (Hawkes Studio's playtest bot) sets window.__hawkesNet.watch = true to be told where the game draws
+  // the others each frame (HawkesNetAvatars): window.__hawkesNet.frames, the newest last, {f, dt, t, h, items}.
+  HawkesNet_Watched: function (handle) {
+    var S = window.__hawkesNet;
+    return S && S.watch ? 1 : 0;
+  },
+
+  HawkesNet_Drawn: function (handle, jsonPtr) {
+    var S = window.__hawkesNet;
+    if (!S || !S.watch) return;
+    try {
+      var f = JSON.parse(UTF8ToString(jsonPtr));
+      f.t = performance.now(); f.h = handle;
+      var all = S.frames = S.frames || [];
+      all.push(f);
+      if (all.length > 2400) all.splice(0, all.length - 2400);
+    } catch (e) {}
   },
 
   HawkesNet_Leave: function (handle) {

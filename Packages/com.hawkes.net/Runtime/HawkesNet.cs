@@ -258,6 +258,9 @@ namespace Hawkes
         [DllImport("__Internal")] static extern void HawkesNet_Count(int id, string endpoint, string project, string rooms, string receiver);
         [DllImport("__Internal")] static extern void HawkesNet_SetAway(int handle, bool on);
         [DllImport("__Internal")] static extern int HawkesNet_RunInBackground(bool on, string sdkUrl);
+        [DllImport("__Internal")] static extern void HawkesNet_Simulate(float latency, float jitter);
+        [DllImport("__Internal")] static extern int HawkesNet_Watched(int handle);
+        [DllImport("__Internal")] static extern void HawkesNet_Drawn(int handle, string json);
         /// <summary>A WebGL build: the page's SDK carries the rooms. Elsewhere the managed client does.</summary>
         public static readonly bool Live = true;
 #else
@@ -272,6 +275,9 @@ namespace Hawkes
         static void HawkesNet_Count(int id, string endpoint, string project, string rooms, string receiver) { }
         static void HawkesNet_SetAway(int handle, bool on) { }
         static int HawkesNet_RunInBackground(bool on, string sdkUrl) => 0;
+        static void HawkesNet_Simulate(float latency, float jitter) { }
+        static int HawkesNet_Watched(int handle) => 0;
+        static void HawkesNet_Drawn(int handle, string json) { }
         public static readonly bool Live = false;
 #endif
 
@@ -302,6 +308,21 @@ namespace Hawkes
                 if (Live && HawkesNet_RunInBackground(value, SdkUrl) == 0 && value) Debug.LogWarning("[HawkesNet] RunInBackground: Unity's main loop was not found in this build; the game pauses in the background");
             }
         }
+        static float simLatency, simJitter;
+        /// <summary>
+        /// For testing how a game feels on a slow connection: the others' poses reach this game this many milliseconds
+        /// later than they would (plus up to SimulatedJitter more, still in order, as on a websocket). 0 (the default) for
+        /// none. Both transports; on WebGL the page can also set window.__hawkesNet.lag (and .jitter) itself.
+        /// </summary>
+        public static float SimulatedLatency { get => simLatency; set { simLatency = Mathf.Max(0f, value); if (Live) HawkesNet_Simulate(simLatency, simJitter); } }
+        /// <summary>Up to this many milliseconds more, at random, on top of SimulatedLatency.</summary>
+        public static float SimulatedJitter { get => simJitter; set { simJitter = Mathf.Max(0f, value); if (Live) HawkesNet_Simulate(simLatency, simJitter); } }
+
+        /// <summary>A tool in the page (a playtest bot) wants to know where the avatars are drawn each frame (WebGL only).</summary>
+        internal static bool Watched(HawkesNetRoom r) => Live && r != null && HawkesNet_Watched(r.handle) == 1;
+        /// <summary>This frame's drawn avatars, for that tool: {"f","dt","items":[{"id","p","y","d","a","j"}]}.</summary>
+        internal static void Drawn(HawkesNetRoom r, string json) { if (Live && r != null) HawkesNet_Drawn(r.handle, json); }
+
         /// <summary>Where the web SDK loads from (RunInBackground; a room's own sdkUrl is in its options).</summary>
         public static string SdkUrl = "https://net.hawkesgen.ai/sdk/hawkes-net@1.mjs";
 
@@ -457,6 +478,10 @@ namespace Hawkes
         {
             readonly List<KeyValuePair<HawkesNetRoom, Event>> later = new List<KeyValuePair<HawkesNetRoom, Event>>();
             readonly List<string> laterCounts = new List<string>();
+            // Managed rooms' poses held back by SimulatedLatency: when each may be read, the room, the poses.
+            readonly List<KeyValuePair<double, KeyValuePair<int, string>>> held = new List<KeyValuePair<double, KeyValuePair<int, string>>>();
+            double heldLast;
+            readonly System.Random heldRandom = new System.Random();
             internal void Later(HawkesNetRoom r, Event e) => later.Add(new KeyValuePair<HawkesNetRoom, Event>(r, e));
             internal void LaterCount(int id, string json) => laterCounts.Add(json.Insert(1, "\"id\":" + id + ","));
 
@@ -506,7 +531,20 @@ namespace Hawkes
                     foreach (var kv in new List<KeyValuePair<int, HawkesNetClient>>(managed))
                     {
                         while (kv.Value.Events.TryDequeue(out var json)) OnNet(json);
-                        if (rooms.TryGetValue(kv.Key, out var mr)) { var mp = kv.Value.TakePoses(); if (mp != null) mr.ReadPoses(mp); }
+                        if (rooms.TryGetValue(kv.Key, out var mr))
+                        {
+                            var mp = kv.Value.TakePoses();
+                            if (mp == null) continue;
+                            if (simLatency <= 0f && simJitter <= 0f && held.Count == 0) { mr.ReadPoses(mp); continue; }
+                            heldLast = Math.Max(heldLast, UnixMs() + simLatency + heldRandom.NextDouble() * simJitter);
+                            held.Add(new KeyValuePair<double, KeyValuePair<int, string>>(heldLast, new KeyValuePair<int, string>(kv.Key, mp)));
+                        }
+                    }
+                    while (held.Count > 0 && held[0].Key <= UnixMs())
+                    {
+                        var h = held[0].Value;
+                        held.RemoveAt(0);
+                        if (rooms.TryGetValue(h.Key, out var hr)) hr.ReadPoses(h.Value);
                     }
                     return;
                 }
