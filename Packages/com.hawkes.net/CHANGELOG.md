@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.0 (2026-11-06)
+
+- **`HawkesNetStartScreen`: a start screen in one component.** Name and room fields, a Join button (or Enter), and a status
+  line that says *Connecting...*, *Online · room x · N others* or *Failed: <reason> (<code>)* with the seconds to the next
+  try and a Try again button. Once online it is a status bar with Leave (Esc), so the player can change name or room. The
+  name is remembered (PlayerPrefs) and can come from the page's `?name=`. With no `project` or `ticketUrl` it shows the
+  first-run steps instead of a failed join. `Blocking` tells your game to ignore the keyboard while the player types; the
+  status line is also logged (`[HawkesNetStart] ...`, the browser console on WebGL).
+- **`HawkesNetLobby.RetryIn` and `RetryNow()`**: the seconds until the lobby joins again after a refusal or a loss, and a
+  way to join again at once.
+- **Avatars sample** uses the start screen (Avatars' Join On Enable is off; the screen joins).
+
 ## 0.6.3 (2026-11-06)
 
 - **Avatars sample: colours, floating names and three emotes.** Each player gets a colour (random; if two players land on

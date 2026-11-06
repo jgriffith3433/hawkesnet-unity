@@ -47,6 +47,7 @@ namespace Hawkes.Samples
 
         Transform player;
         HawkesNetAvatars avatars;
+        HawkesNetStartScreen start;
         readonly View me = new View();
         readonly Dictionary<string, View> views = new Dictionary<string, View>();
         readonly Style style = new Style();
@@ -138,6 +139,11 @@ namespace Hawkes.Samples
             avatars.Local = player;
             avatars.RemotePrefab = remote.gameObject;
             avatars.Extra = style;
+            // The start screen joins (name, room, status, errors); Avatars waits for it.
+            avatars.JoinOnEnable = false;
+            start = gameObject.AddComponent<HawkesNetStartScreen>();
+            start.Avatars = avatars;
+            start.Area = Area;
             gameObject.SetActive(true);
         }
 
@@ -151,8 +157,6 @@ namespace Hawkes.Samples
             wall.transform.localScale = size;
             wall.GetComponent<Renderer>().sharedMaterial = material;
         }
-
-        static string Others(int count) => count == 1 ? "1 other" : count + " others";
 
         void SetColor(Color c)
         {
@@ -169,7 +173,9 @@ namespace Hawkes.Samples
 
         void Update()
         {
-            var move = new Vector3(Input.GetAxisRaw("Horizontal"), 0f, Input.GetAxisRaw("Vertical"));
+            // While the start screen is up the player is typing a name: no walking, no emotes.
+            bool typing = start != null && start.Blocking;
+            var move = typing ? Vector3.zero : new Vector3(Input.GetAxisRaw("Horizontal"), 0f, Input.GetAxisRaw("Vertical"));
             if (move.sqrMagnitude > 0.01f)
             {
                 player.position += move.normalized * Speed * Time.deltaTime;
@@ -181,7 +187,7 @@ namespace Hawkes.Samples
             player.position = new Vector3(Mathf.Clamp(p.x, -limit, limit), 1f, Mathf.Clamp(p.z, -limit, limit));
 
             // Emotes: 1 wave, 2 hop, 3 spin. Played here at once and sent with the next pose.
-            for (int i = 1; i < EmoteNames.Length; i++)
+            for (int i = 1; i < EmoteNames.Length && !typing; i++)
                 if (Input.GetKeyDown(KeyCode.Alpha0 + i) || Input.GetKeyDown(KeyCode.Keypad0 + i))
                 {
                     style.e = i; style.n++;
@@ -262,10 +268,7 @@ namespace Hawkes.Samples
         {
             var lobby = avatars != null ? avatars.Lobby : null;
             if (lobby == null) return;
-            string room = lobby.RoomName.Length > 0 ? lobby.RoomName : "-";
-            string problem = lobby.LastProblem.Length > 0 ? "\n" + lobby.LastProblem : "";
-            GUI.Label(new Rect(10, 10, 640, 60), "Hawkes Net: " + lobby.Status + " · room " + room + " · " + Others(avatars.Remotes.Count) + problem);
-            GUI.Label(new Rect(10, Screen.height - 28, 640, 24), "Move: WASD / arrows · Emotes: 1 wave · 2 hop · 3 spin");
+            if (!start.Blocking) GUI.Label(new Rect(10, Screen.height - 28, 640, 24), "Move: WASD / arrows · Emotes: 1 wave · 2 hop · 3 spin");
 
             if (Event.current.type != EventType.Repaint) return;
             var cam = Camera.main;

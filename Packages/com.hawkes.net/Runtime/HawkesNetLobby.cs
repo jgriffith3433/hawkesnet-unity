@@ -39,6 +39,8 @@ namespace Hawkes
         /// <summary>The last problem's code and detail ("ticket", "full", "webgl-only"...), for logs.</summary>
         public string LastProblem { get; private set; } = "";
         public bool Ready => Room != null && Room.Ready;
+        /// <summary>Seconds until the lobby joins again by itself after a refusal or a loss (0 when it is not waiting).</summary>
+        public float RetryIn => retryAt < 0 || Room != null ? 0f : Mathf.Max(0f, (float)(retryAt - Time.realtimeSinceStartup));
 
         public event Action<HawkesNetRoom> Joined;
         /// <summary>The room was left or lost (the lobby joins again unless Leave was called).</summary>
@@ -140,6 +142,16 @@ namespace Hawkes
             Close("left");
             SetStatus("off");
             lobbies.Remove(this);
+        }
+
+        /// <summary>Join again now, without waiting out the back-off (the "Try again" button). Does nothing while joined.</summary>
+        public void RetryNow()
+        {
+            if (Area.Length == 0 || Room != null) return;
+            retryAt = -1;
+            backoff = 0f;
+            if (!explicitShard) Shard = 1;
+            Open();
         }
 
         void Open()
