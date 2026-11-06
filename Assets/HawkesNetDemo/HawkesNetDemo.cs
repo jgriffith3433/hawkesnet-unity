@@ -18,6 +18,8 @@ namespace Hawkes.Demo
         public string[] LiveHosts = new string[0];
         public string Area = "unity-demo";
         public float Speed = 5f;
+        [Tooltip("Half the side of the square arena (m): the ground and its edge walls are at plus and minus this.")]
+        public float ArenaHalf = 12f;
 
         Transform player;
         HawkesNetAvatars avatars;
@@ -39,7 +41,8 @@ namespace Hawkes.Demo
         void Awake()
         {
             var ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
-            ground.transform.localScale = new Vector3(5f, 1f, 5f);
+            // A Plane is 10 m on a side at scale 1.
+            ground.transform.localScale = new Vector3(ArenaHalf * 0.2f, 1f, ArenaHalf * 0.2f);
             // CreatePrimitive adds a collider inside the engine, so a build that strips unused engine code (WebGL) drops
             // the physics module unless managed code names these types ("Can't add component because class
             // 'MeshCollider' doesn't exist!"). Naming them here keeps them; the scene moves by transform, so nothing
@@ -59,6 +62,15 @@ namespace Hawkes.Demo
             remote.GetComponent<Renderer>().sharedMaterial = MakeMaterial(Color.gray);
             remote.SetActive(false);
 
+            // Edge walls: the player is kept inside them (Update), so the arena is bounded whatever the input.
+            var wallMaterial = MakeMaterial(new Color(0.55f, 0.5f, 0.45f));
+            const float wallHeight = 2f, wallThickness = 0.5f;
+            float wallCentre = ArenaHalf + wallThickness * 0.5f, wallLength = ArenaHalf * 2f + wallThickness * 2f;
+            AddWall(new Vector3(0f, wallHeight * 0.5f, wallCentre), new Vector3(wallLength, wallHeight, wallThickness), wallMaterial);
+            AddWall(new Vector3(0f, wallHeight * 0.5f, -wallCentre), new Vector3(wallLength, wallHeight, wallThickness), wallMaterial);
+            AddWall(new Vector3(wallCentre, wallHeight * 0.5f, 0f), new Vector3(wallThickness, wallHeight, wallLength), wallMaterial);
+            AddWall(new Vector3(-wallCentre, wallHeight * 0.5f, 0f), new Vector3(wallThickness, wallHeight, wallLength), wallMaterial);
+
             var cam = Camera.main != null ? Camera.main : new GameObject("Camera").AddComponent<Camera>();
             cam.transform.SetParent(player, false);
             cam.transform.localPosition = new Vector3(0f, 4f, -8f);
@@ -76,6 +88,19 @@ namespace Hawkes.Demo
             gameObject.SetActive(true);
         }
 
+        // An edge wall: a visible box with no collider (the scene moves by transform, see Awake).
+        static void AddWall(Vector3 centre, Vector3 size, Material material)
+        {
+            var wall = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            wall.name = "Edge wall";
+            Destroy(wall.GetComponent<BoxCollider>());
+            wall.transform.position = centre;
+            wall.transform.localScale = size;
+            wall.GetComponent<Renderer>().sharedMaterial = material;
+        }
+
+        static string Others(int count) => count == 1 ? "1 other" : count + " others";
+
         void Update()
         {
             var move = new Vector3(Input.GetAxisRaw("Horizontal"), 0f, Input.GetAxisRaw("Vertical"));
@@ -84,6 +109,10 @@ namespace Hawkes.Demo
                 player.position += move.normalized * Speed * Time.deltaTime;
                 player.rotation = Quaternion.LookRotation(move);
             }
+            // The capsule stands on the ground (centre at 1 m, radius 0.5 m) and stays inside the walls, whatever the input.
+            float limit = ArenaHalf - 0.5f;
+            var p = player.position;
+            player.position = new Vector3(Mathf.Clamp(p.x, -limit, limit), 1f, Mathf.Clamp(p.z, -limit, limit));
         }
 
         void OnGUI()
@@ -92,7 +121,7 @@ namespace Hawkes.Demo
             if (lobby == null) return;
             string room = lobby.RoomName.Length > 0 ? lobby.RoomName : "-";
             string problem = lobby.LastProblem.Length > 0 ? "\n" + lobby.LastProblem : "";
-            GUI.Label(new Rect(10, 10, 640, 60), "Hawkes Net: " + lobby.Status + " · room " + room + " · " + avatars.Remotes.Count + " others" + problem);
+            GUI.Label(new Rect(10, 10, 640, 60), "Hawkes Net: " + lobby.Status + " · room " + room + " · " + Others(avatars.Remotes.Count) + problem);
         }
     }
 }

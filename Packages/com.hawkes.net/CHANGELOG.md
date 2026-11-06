@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.2 (2026-11-06)
+
+- **Avatars sample: a bounded arena.** The ground is now a square of 2 x `ArenaHalf` metres (12 by default, was 50 by 50)
+  with four edge walls, and the player's capsule stays on the ground inside them whatever the input: walking for minutes
+  no longer takes it off the ground.
+- **The HUD says "1 other"** (not "1 others") when one other player is in the room.
+
 ## 0.6.1 (2026-11-03)
 
 - **Avatars sample: no more magenta in WebGL.** The sample's ground and capsules came from `CreatePrimitive`, whose
