@@ -246,6 +246,9 @@ namespace Hawkes
     /// </summary>
     public static class HawkesNet
     {
+        /// <summary>This package's version (what package.json says; keep the two in step on a release). The start screen shows it.</summary>
+        public const string PackageVersion = "0.9.0";
+
 #if UNITY_WEBGL && !UNITY_EDITOR
         [DllImport("__Internal")] static extern void HawkesNet_Join(int handle, string room, string optionsJson, string receiver);
         [DllImport("__Internal")] static extern int HawkesNet_Send(int handle, string kind, string dataJson, bool reliable, string to);
