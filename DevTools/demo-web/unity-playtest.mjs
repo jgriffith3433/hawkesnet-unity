@@ -132,7 +132,24 @@ const baseStart = api.start.bind(api);
 const joinFromStartScreen = async () => {
   await waitFor(() => online() || startUp(), 120000, 'Unity to show the start screen');
   const t0 = performance.now();
-  while (!online() && performance.now() - t0 < 60000) { await tap('Enter'); await sleep(1500); }
+  // Enter first (name field focused); every few tries also a real click where the Join button is (centre column, about
+  // half way down the 960x600 start form), for a page where the key does not reach the field.
+  for (let i = 0; !online() && performance.now() - t0 < 60000; i++) {
+    await tap('Enter');
+    if (i % 3 === 2) await clickJoin();
+    await sleep(1500);
+  }
+  if (!online() && !slot()) throw new Error('the Join form was still up after 60 s of Enter and clicks on Join: no client was made, because Join was never accepted (not because the server is unreachable)');
+};
+const clickJoin = async () => {
+  const c = document.querySelector('canvas');
+  if (!c) return;
+  const r = c.getBoundingClientRect();
+  for (const fx of [0.5, 0.667]) {
+    const init = { bubbles: true, cancelable: true, clientX: r.left + r.width * fx, clientY: r.top + r.height * (301 / 600), button: 0, view: window };
+    for (const [t, b] of [['mousemove', 0], ['mousedown', 1], ['mouseup', 0], ['click', 0]]) c.dispatchEvent(new MouseEvent(t, { ...init, buttons: b }));
+    await sleep(150);
+  }
 };
 const baseScenarios = api.scenarios.bind(api);
 api.scenarios = () => [...baseScenarios(), { id: 'start-screen', title: 'Start screen: name, Join, status connecting/online, a failed join with its reason', seconds: 90, tags: ['full', 'ui'],
@@ -371,7 +388,7 @@ const smoothEnd = async () => {
 
 api.start = async (id, options = {}) => {
   if (!SIDE.includes(id)) {
-    try { await joinFromStartScreen(); } catch (e) { /* the scenario's own connect check says what is missing */ }
+    try { await joinFromStartScreen(); } catch (e) { startLog.push({ at: performance.now(), text: `bot: ${e?.message ?? e}` }); globalThis.__hawkesJoinProblem = e?.message ?? String(e); }
     return baseStart(id, options);
   }
   if (sr && !sr.done) sr.done = true;
