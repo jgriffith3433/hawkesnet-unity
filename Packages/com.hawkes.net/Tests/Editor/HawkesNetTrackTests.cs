@@ -1,3 +1,6 @@
+#if UNITY_INCLUDE_TESTS
+// Compiled only where Unity's Test Framework is on and this package is in the project's testables; elsewhere
+// (the demo's cloud build has no com.unity.test-framework) this file is empty, so NUnit is never needed.
 using NUnit.Framework;
 
 namespace Hawkes.Net.Tests
@@ -60,3 +63,4 @@ namespace Hawkes.Net.Tests
         }
     }
 }
+#endif
