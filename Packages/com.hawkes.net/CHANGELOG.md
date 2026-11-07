@@ -2,6 +2,7 @@
 
 ## 0.9.0 (2026-11-06)
 
+- **The start screen shows the package version** ("Hawkes Net for Unity v0.9.0", bottom right of the Join panel), from `HawkesNet.PackageVersion`; keep it in step with package.json.
 - **Setup window.** Window > Hawkes Net > Setup (Editor only, `Hawkes.Net.Editor`) checks the project and scene for a
   first join: flags a missing or odd project id (`usr_...`), an Avatars component with no Local player, the build target
   and live hosts, and can set the id on the scene's Avatars. It redraws when the scene or project changes. "Open Build Settings" opens Build Settings (Build Profiles in Unity 6) by menu name.

@@ -76,7 +76,7 @@ namespace Hawkes
 
         void Start()
         {
-            Debug.Log("[HawkesNetStart] start screen up | name " + PlayerName + ", room " + RoomField);
+            Debug.Log("[HawkesNetStart] start screen up | name " + PlayerName + ", room " + RoomField + ", version " + HawkesNet.PackageVersion);
         }
 
         void Update()
@@ -268,7 +268,7 @@ namespace Hawkes
         {
             bool setup = l != null && SetupMissing(l);
             bool failed = l != null && (l.Status == "offline" || l.Status == "full");
-            float pw = 400f, ph = setup ? 430f : (failed ? 340f : 310f);
+            float pw = 400f, ph = (setup ? 430f : (failed ? 340f : 310f)) + 20f;
             var r = new Rect((w - pw) * 0.5f, Mathf.Max(10f, (h - ph) * 0.4f), pw, ph);
             Box(new Rect(r.x - 2, r.y - 2, r.width + 4, r.height + 4), new Color(1f, 1f, 1f, 0.12f));
             Box(r, new Color(0.06f, 0.07f, 0.1f, 0.94f));
@@ -317,6 +317,14 @@ namespace Hawkes
             line.normal.textColor = Error.Length > 0 ? StatusColor("offline") : StatusColor(st);
             GUI.Label(new Rect(x, y, iw, 62f), Error.Length > 0 ? Error : status, line);
             line.normal.textColor = old;
+
+            var oc = label.normal.textColor;
+            var oa = label.alignment;
+            label.normal.textColor = new Color(1f, 1f, 1f, 0.45f);
+            label.alignment = TextAnchor.MiddleRight;
+            GUI.Label(new Rect(x, r.yMax - 28f, iw, 22f), "Hawkes Net for Unity v" + HawkesNet.PackageVersion, label);
+            label.normal.textColor = oc;
+            label.alignment = oa;
         }
 
         void Hud(HawkesNetLobby l, float w)

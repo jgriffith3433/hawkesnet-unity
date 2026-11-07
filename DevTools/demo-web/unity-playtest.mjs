@@ -187,8 +187,10 @@ async function startScreen() {
     await waitFor(startUp, 120000, 'Unity to show the start screen (no "[HawkesNetStart] start screen up" in the console)');
     if (online()) throw new Error('the page had already joined a room without the player pressing Join');
     defaultName = /name (.+), room/.exec(startLog.find((l) => l.text.startsWith('start screen up')).text)?.[1] ?? '';
-    srEvent('log', `start screen up, prefilled name "${defaultName}"`);
-    return `prefilled name "${defaultName}"`;
+    const version = /version (\d+\.\d+\.\d+)/.exec(startLog.find((l) => l.text.startsWith('start screen up')).text)?.[1];
+    if (!version) throw new Error('the Join screen shows no package version ("Hawkes Net for Unity v<x.y.z>")');
+    srEvent('log', `start screen up, prefilled name "${defaultName}", Join screen shows Hawkes Net for Unity v${version}`);
+    return `prefilled name "${defaultName}", Join screen shows v${version}`;
   })) return;
   sr.progress = 0.15;
 
