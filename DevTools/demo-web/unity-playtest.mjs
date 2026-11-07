@@ -37,7 +37,7 @@ const main = () => {
 };
 // Unity reads the keyboard from the page: a press on the canvas and the window, with the key's code as a browser sends it.
 const CODES = { d: ['KeyD', 68], w: ['KeyW', 87], 1: ['Digit1', 49], 2: ['Digit2', 50], 3: ['Digit3', 51],
-  Enter: ['Enter', 13], Escape: ['Escape', 27], Backspace: ['Backspace', 8] };
+  Enter: ['Enter', 13], F3: ['F3', 114], Escape: ['Escape', 27], Backspace: ['Backspace', 8] };
 const key = (k, down) => {
   const [code, keyCode] = CODES[k] ?? [/^[a-z]$/i.test(k) ? `Key${k.toUpperCase()}` : '', k.toUpperCase().charCodeAt(0)];
   const init = { key: k, code, keyCode, which: keyCode, bubbles: true, cancelable: true };
@@ -154,8 +154,8 @@ const clickJoin = async () => {
 const baseScenarios = api.scenarios.bind(api);
 api.scenarios = () => [...baseScenarios(), { id: 'start-screen', title: 'Start screen: name, Join, status connecting/online, a failed join with its reason', seconds: 90, tags: ['full', 'ui'],
   description: 'Types a name on the start screen, presses Join and checks the status line goes connecting then online and the other players see the name; then refuses the ticket request, checks the status says Failed with the reason, and joins again.' },
-{ id: 'smooth', title: 'Smooth remote avatar: moves every frame, faces where it goes, no snapping at 150 ms latency', seconds: 60, tags: ['full', 'netcode'],
-  description: 'Joins from the start screen, opens a second player that walks a figure eight in front of the camera, and reads where Unity draws it every frame (window.__hawkesNet.watch): 6 s on the plain connection (it must move every frame, facing where it goes), then 10 s with 150 ms (+0-30 ms jitter) of simulated latency on the poses (no frame may step faster than twice its top speed or turn more than twice its top turn rate).' }];
+{ id: 'smooth', title: 'Smooth remote avatar: moves every frame, no snapping at 150 ms latency, prediction capped at 250 ms then holds, Latency HUD and F3 debug line', seconds: 75, tags: ['full', 'netcode'],
+  description: 'Joins from the start screen, opens a second player that walks a figure eight in front of the camera, and reads where Unity draws it every frame (window.__hawkesNet.watch): 6 s on the plain connection (it must move every frame, facing where it goes), then 10 s with 150 ms (+0-30 ms jitter) of simulated latency on the poses (no frame may step faster than twice its top speed or turn more than twice its top turn rate). Then it checks the HUD (plain "Latency: N ms"; the detail line only after F3), and stops the bot's poses for 3 s: the prediction must never pass 250 ms and the avatar must hold still.' }];
 // The scenarios played here rather than by net-playtest.mjs: their own run, panel and report.
 const SIDE = ['start-screen', 'smooth'];
 
@@ -379,6 +379,47 @@ async function smooth() {
     if (b.still > 0) throw new Error(`it stood still in ${b.still} of ${b.frames} frames`);
     return `${b.frames} frames, top ${b.topSpeed.toFixed(1)} m/s (walks at up to ${eightLimits.speed.toFixed(1)}), ${Math.round(b.delay)} ms behind, ${b.aheadFrames} frames predicted (up to ${Math.round(b.maxAhead)} ms)`;
   });
+  sr.progress = 0.8;
+
+  // 3. The HUD: plain latency, the detail line only after F3.
+  await srCheck('The HUD shows plain latency and hides the debug line until F3', async () => {
+    await waitFor(() => S().hud, 5000, 'the game to report its HUD (window.__hawkesNet.hud)');
+    const h0 = S().hud;
+    if (!/^Latency: \d+ ms$/.test(h0.main)) throw new Error(`the HUD says "${h0.main}", not "Latency: N ms"`);
+    if (h0.debug) throw new Error(`the debug line shows before F3: "${h0.debug}"`);
+    srEvent('hud', h0.main);
+    await tap('F3');
+    await waitFor(() => S().hud.debug, 3000, 'the debug line after F3');
+    srEvent('hud', `F3 on: ${S().hud.debug}`);
+    const shown = S().hud.debug, m = /predicting (\d+) ms/.exec(shown);
+    if (m && Number(m[1]) > 250) throw new Error(`the HUD predicts ${m[1]} ms, more than 250`);
+    await tap('F3');
+    await waitFor(() => !S().hud.debug, 3000, 'the debug line to hide on the second F3');
+    return `"${h0.main}"; F3 shows "${shown}", F3 again hides it`;
+  });
+
+  // 4. The other player stops sending: the avatar is carried on at most 250 ms past its last pose, then holds still.
+  S().lag = 0; S().jitter = 0;
+  await sleep(1500);
+  clearInterval(smoothTick); smoothTick = null; // the bot's pose stream stops
+  S().frames = [];
+  srEvent('stop', 'the second player stops sending poses for 3 s');
+  await tap('F3'); // detail on, so the footage shows "predicting N ms" capped
+  await sleep(3000);
+  const c = framesOf(S().frames, id);
+  const tail = (S().frames || []).filter((f) => f.t > performance.now() - 1500).map((f) => (f.items || []).find((i) => i.id === id)).filter(Boolean);
+  let drift = 0;
+  for (let i = 1; i < tail.length; i++) drift = Math.max(drift, Math.hypot(tail[i].p[0] - tail[0].p[0], tail[i].p[2] - tail[0].p[2]));
+  Object.assign(sr.metrics, { stoppedMaxAheadMs: Math.round(c.maxAhead), stoppedDriftM: Math.round(drift * 1000) / 1000 });
+  await srCheck('A prediction never goes past 250 ms, and a player that stops sending holds still', async () => {
+    if (c.frames < 60) throw new Error(`only ${c.frames} frames were drawn`);
+    if (c.maxAhead > 250.5) throw new Error(`predicted up to ${Math.round(c.maxAhead)} ms`);
+    if (Math.max(b.maxAhead, a.maxAhead) > 250.5) throw new Error(`predicted up to ${Math.round(Math.max(b.maxAhead, a.maxAhead))} ms while it walked`);
+    if (tail.length < 30) throw new Error('too few frames in the last 1.5 s');
+    if (drift > 0.001) throw new Error(`it drifted ${drift.toFixed(3)} m in the last 1.5 s after the poses stopped`);
+    return `predicted up to ${Math.round(c.maxAhead)} ms, then held (moved ${drift.toFixed(4)} m in 1.5 s)`;
+  });
+  await tap('F3');
   sr.progress = 0.95;
 }
 const smoothEnd = async () => {

@@ -224,6 +224,12 @@ mergeInto(LibraryManager.library, {
     } catch (e) {}
   },
 
+  // What the game's HUD shows right now (HawkesNet.ShowedHud), for a tool in the page: window.__hawkesNet.hud = {main, debug}.
+  HawkesNet_Hud: function (jsonPtr) {
+    var S = window.__hawkesNet = window.__hawkesNet || { rooms: {} };
+    try { S.hud = JSON.parse(UTF8ToString(jsonPtr)); } catch (e) {}
+  },
+
   HawkesNet_Leave: function (handle) {
     var S = window.__hawkesNet || { rooms: {} }, slot = S.rooms[handle];
     if (!slot) return;

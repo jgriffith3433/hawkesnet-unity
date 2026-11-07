@@ -131,8 +131,27 @@ static class Program
         Check(maxErr < 0.35, $"{r.name}: drawn within 0.35 m of where the player was (max {maxErr:0.00} m)");
     }
 
+    // The clamp (also the package's edit-mode test, Tests/Editor): a player that stops sending is carried on at most 250 ms, then holds.
+    static void Clamp()
+    {
+        double wall = 0, at = 0;
+        var t = new HawkesNetTrack(() => wall) { MaxAhead = 10000 };
+        for (int i = 0; i <= 30; i++) { at = i * 33.0; t.Push(at, (float)(at * 0.005), 1f, 0f, 90f, at + 40); wall = at; }
+        double maxAhead = 0, minHeldX = double.MaxValue, maxHeldX = double.MinValue;
+        for (double now = at; now < at + 5000; now += 16)
+        {
+            wall += 16;
+            t.Sample(now, out float x, out _, out _, out _);
+            maxAhead = Math.Max(maxAhead, t.Ahead);
+            if (now > at + 1500) { minHeldX = Math.Min(minHeldX, x); maxHeldX = Math.Max(maxHeldX, x); }
+        }
+        Check(maxAhead <= HawkesNetTrack.AheadLimit + 1e-6 && maxAhead > HawkesNetTrack.AheadLimit - 1, $"clamp: carried on up to {maxAhead:0} ms, never past {HawkesNetTrack.AheadLimit:0}");
+        Check(maxHeldX - minHeldX < 1e-4, $"clamp: holds still after the limit (moved {maxHeldX - minHeldX:0.00000} m)");
+    }
+
     static int Main()
     {
+        Clamp();
         Play(new Run { name = "clean", lagFrom = 0, lagTo = 0, switchAt = 1e9, jitter = 8, stallAt = 1e9, frameJitter = 2, clockJumpAt = 1e9 });
         Play(new Run { name = "150 ms + 30 ms jitter", lagFrom = 150, lagTo = 150, switchAt = 1e9, jitter = 30, stallAt = 1e9, frameJitter = 2, clockJumpAt = 1e9 });
         Play(new Run { name = "0 -> 150 ms mid-run", lagFrom = 0, lagTo = 150, switchAt = 7000, jitter = 30, stallAt = 1e9, frameJitter = 2, clockJumpAt = 1e9 });

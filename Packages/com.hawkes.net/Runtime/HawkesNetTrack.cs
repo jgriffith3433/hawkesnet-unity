@@ -14,7 +14,7 @@ namespace Hawkes
     /// - Delay learns itself: how late this player's poses arrive (transit), how often they come (interval) and how
     ///   much that varies (jitter), and eases towards the new value (playback runs at most 10% fast or slow), so a
     ///   slow or jittery connection costs a little more delay instead of stutter;
-    /// - extrapolated: when a pose is late, the player is carried on along its velocity and turn (up to MaxAhead ms),
+    /// - extrapolated: when a pose is late, the player is carried on along its velocity and turn (up to MaxAhead ms, at most 250, then it holds still),
     ///   and when the real pose arrives the guess's error is blended out over about a tenth of a second (no snap);
     /// - a player that stood still and starts again starts from where it stood (no slow slide from the last pose).
     /// HawkesNetAvatars uses one per remote; a game with its own avatars (HawkesNetLobby.PoseChanged) can too.
@@ -44,8 +44,11 @@ namespace Hawkes
 
         /// <summary>The least delay (ms); the learned one is used when it is more.</summary>
         public double MinDelay;
-        /// <summary>How far past the newest pose a late player is carried on (ms).</summary>
-        public double MaxAhead = 250;
+        /// <summary>The most a player is ever carried on past its newest pose (ms); MaxAhead cannot go above it.</summary>
+        public const double AheadLimit = 250;
+        /// <summary>How far past the newest pose a late player is carried on (ms; at most AheadLimit). After that the
+        /// player holds its last guessed pose until a real one arrives.</summary>
+        public double MaxAhead = AheadLimit;
         /// <summary>The median time between this player's poses (ms).</summary>
         public double Interval { get; private set; } = 100;
         /// <summary>How late this player's poses arrive, the usual (ms; the room's clock, so it includes the network).</summary>
@@ -54,7 +57,7 @@ namespace Hawkes
         public double Jitter => jitter;
         /// <summary>How far behind the room's clock this player is drawn now (ms; eases towards Target).</summary>
         public double Delay => delay < 0 ? Target : delay;
-        /// <summary>How far past its newest pose this player was carried on in the last Sample (ms; 0 while interpolating).</summary>
+        /// <summary>How far past its newest pose this player was carried on in the last Sample (ms; 0 while interpolating; never more than MaxAhead).</summary>
         public double Ahead { get; private set; }
         /// <summary>Poses held.</summary>
         public int Count => buf.Count;
@@ -166,8 +169,8 @@ namespace Hawkes
             if (i == buf.Count - 1 || rt < a.at)
             {
                 // Past the newest (or before the oldest): hold it, carried on along its last velocity and turn.
-                double ahead = rt < a.at ? 0 : Math.Min(rt - a.at, MaxAhead);
-                Ahead = Math.Max(0, rt - a.at);
+                double ahead = rt < a.at ? 0 : Math.Min(rt - a.at, Math.Max(0, Math.Min(MaxAhead, AheadLimit)));
+                Ahead = ahead;
                 x = a.x; y = a.y; z = a.z; yaw = a.yaw;
                 if (ahead > 0 && buf.Count > 1)
                 {

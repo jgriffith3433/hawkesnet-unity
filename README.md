@@ -7,7 +7,7 @@ run Hawkes Net's web SDK in the page; the Editor and desktop builds join the sam
 **Install** (Package Manager > + > Add package from git URL):
 
 ```
-https://github.com/jgriffith3433/hawkesnet-unity.git?path=/Packages/com.hawkes.net#v0.9.0
+https://github.com/jgriffith3433/hawkesnet-unity.git?path=/Packages/com.hawkes.net#v0.9.1
 ```
 
 or download `com.hawkes.net.tgz` from [net.hawkesgen.ai](https://net.hawkesgen.ai) (Add package from tarball), or get
@@ -17,7 +17,7 @@ and read [the package's README](Packages/com.hawkes.net/README.md).
 ## Quickstart
 
 1. **Install.** Package Manager > + > Add package from git URL:
-   `https://github.com/jgriffith3433/hawkesnet-unity.git?path=/Packages/com.hawkes.net#v0.9.0`
+   `https://github.com/jgriffith3433/hawkesnet-unity.git?path=/Packages/com.hawkes.net#v0.9.1`
 2. **Make a project.** Sign in at [net.hawkesgen.ai](https://net.hawkesgen.ai) (free) and create a project; copy its id (`usr_...`).
 3. **Check your setup.** Window > Hawkes Net > Setup. Paste the id: the window flags a missing or odd id, a scene with no
    player, and anything else a first join needs.

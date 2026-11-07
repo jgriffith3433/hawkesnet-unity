@@ -196,8 +196,13 @@ namespace Hawkes.Demo
             v.Emote = emote; v.Started = Time.time;
         }
 
+        // F3 shows the detail line under the latency (how far behind others are drawn, how far one is predicted).
+        bool debug;
+        string hudMain = "", hudDetail = "";
+
         void Update()
         {
+            if (Input.GetKeyDown(KeyCode.F3)) debug = !debug;
             // While the start screen is up the player is typing a name: no walking, no emotes.
             bool typing = start != null && start.Blocking;
             var move = typing ? Vector3.zero : new Vector3(Input.GetAxisRaw("Horizontal"), 0f, Input.GetAxisRaw("Vertical"));
@@ -303,8 +308,17 @@ namespace Hawkes.Demo
                 {
                     double most = 0, ahead = 0;
                     foreach (var r in avatars.Remotes.Values) { most = Math.Max(most, r.Track.Delay); ahead = Math.Max(ahead, r.Track.Ahead); }
-                    string lag = HawkesNet.SimulatedLatency > 0f ? $" · simulated lag {HawkesNet.SimulatedLatency:0} ms" + (HawkesNet.SimulatedJitter > 0f ? $" ± {HawkesNet.SimulatedJitter:0}" : "") : "";
-                    GUI.Label(new Rect(10, Screen.height - 50, 640, 24), $"Others drawn {most:0} ms behind{(ahead > 0 ? $" · predicting {ahead:0} ms" : "")}{lag}");
+                    string latency = $"Latency: {most:0} ms", detail = "";
+                    GUI.Label(new Rect(10, Screen.height - 50, 640, 24), latency);
+                    // F3 toggles the detail: how far behind others are drawn, and how far one is carried on past its newest pose.
+                    if (debug)
+                    {
+                        string lag = HawkesNet.SimulatedLatency > 0f ? $" · simulated lag {HawkesNet.SimulatedLatency:0} ms" + (HawkesNet.SimulatedJitter > 0f ? $" ± {HawkesNet.SimulatedJitter:0}" : "") : "";
+                        detail = $"Others drawn {most:0} ms behind{(ahead > 0 ? $" · predicting {ahead:0} ms" : "")}{lag}";
+                        GUI.Label(new Rect(10, Screen.height - 72, 640, 24), detail);
+                    }
+                    // Tell a tool in the page (the playtest bot) what the HUD says, when it changes.
+                    if (Event.current.type == EventType.Repaint && (latency != hudMain || detail != hudDetail)) { hudMain = latency; hudDetail = detail; HawkesNet.ShowedHud(latency, detail); }
                 }
             }
 
