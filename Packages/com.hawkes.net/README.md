@@ -8,7 +8,7 @@ or second.
 ## Quickstart
 
 1. **Install.** Package Manager > + > Add package from git URL:
-   `https://github.com/jgriffith3433/hawkesnet-unity.git?path=/Packages/com.hawkes.net#v0.9.0`
+   `https://github.com/jgriffith3433/hawkesnet-unity.git?path=/Packages/com.hawkes.net#v0.9.1`
 2. **Make a project.** Sign in at [net.hawkesgen.ai](https://net.hawkesgen.ai) (free) and create a project; copy its id (`usr_...`).
 3. **Check your setup.** Window > Hawkes Net > Setup. Paste the id: the window flags a missing or odd id, a scene with no
    player, and anything else a first join needs.
@@ -90,7 +90,7 @@ pose; read `Remotes[id].Extra` on the others.
 Poses arrive about 30 times a second, late and unevenly. A track draws each player a little in the past, between the two
 poses around that moment (position and facing), so they move every frame and turn the short way. How far in the past is
 learned per player: how late their poses arrive, how often, and how much that varies, eased in so playback never jumps.
-When a pose is late the player is carried on along its velocity and turn (up to `MaxExtrapolation`, 250 ms), and the
+When a pose is late the player is carried on along its velocity and turn (up to `MaxExtrapolation`, never more than 250 ms; after that it holds its last pose), and the
 guess's error is blended out in about a tenth of a second when the real pose comes. `HawkesNetAvatars.Delay` is the
 least delay (0: the learned one); `Remotes[id].Track.Delay` and `.Ahead` say how far behind and how far predicted.
 

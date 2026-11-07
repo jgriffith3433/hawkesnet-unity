@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.9.1 (2026-11-07)
+
+- **Prediction is capped at 250 ms.** `HawkesNetTrack.Ahead` used to keep counting past `MaxAhead` while the avatar was
+  already held, so a player that stopped sending showed "predicting 3000 ms". Now `Ahead` is how far the avatar is really
+  carried on, never more than `MaxAhead`, and `MaxAhead` itself cannot go above the new `HawkesNetTrack.AheadLimit`
+  (250 ms). After that the avatar holds its last pose until a real one arrives.
+- **Avatars sample HUD.** "Latency: N ms" plainly; F3 toggles the detail line ("Others drawn N ms behind · predicting N ms").
+  `HawkesNet.ShowedHud` (WebGL) tells the page what the HUD says (`window.__hawkesNet.hud`) for Studio's playtest.
+- **Edit-mode tests** for the clamp (`Tests/Editor`, Test Runner > EditMode).
+
 ## 0.9.0 (2026-11-06)
 
 - **The start screen shows the package version** ("Hawkes Net for Unity v0.9.0", bottom right of the Join panel), from `HawkesNet.PackageVersion`; keep it in step with package.json.

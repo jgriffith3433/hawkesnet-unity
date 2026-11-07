@@ -247,7 +247,7 @@ namespace Hawkes
     public static class HawkesNet
     {
         /// <summary>This package's version (what package.json says; keep the two in step on a release). The start screen shows it.</summary>
-        public const string PackageVersion = "0.9.0";
+        public const string PackageVersion = "0.9.1";
 
 #if UNITY_WEBGL && !UNITY_EDITOR
         [DllImport("__Internal")] static extern void HawkesNet_Join(int handle, string room, string optionsJson, string receiver);
@@ -264,6 +264,7 @@ namespace Hawkes
         [DllImport("__Internal")] static extern void HawkesNet_Simulate(float latency, float jitter);
         [DllImport("__Internal")] static extern int HawkesNet_Watched(int handle);
         [DllImport("__Internal")] static extern void HawkesNet_Drawn(int handle, string json);
+        [DllImport("__Internal")] static extern void HawkesNet_Hud(string json);
         /// <summary>A WebGL build: the page's SDK carries the rooms. Elsewhere the managed client does.</summary>
         public static readonly bool Live = true;
 #else
@@ -281,6 +282,7 @@ namespace Hawkes
         static void HawkesNet_Simulate(float latency, float jitter) { }
         static int HawkesNet_Watched(int handle) => 0;
         static void HawkesNet_Drawn(int handle, string json) { }
+        static void HawkesNet_Hud(string json) { }
         public static readonly bool Live = false;
 #endif
 
@@ -325,6 +327,15 @@ namespace Hawkes
         internal static bool Watched(HawkesNetRoom r) => Live && r != null && HawkesNet_Watched(r.handle) == 1;
         /// <summary>This frame's drawn avatars, for that tool: {"f","dt","items":[{"id","p","y","d","a","j"}]}.</summary>
         internal static void Drawn(HawkesNetRoom r, string json) { if (Live && r != null) HawkesNet_Drawn(r.handle, json); }
+
+        /// <summary>The lines a game's HUD shows (WebGL only), for a tool in the page: window.__hawkesNet.hud = {main, debug}
+        /// (debug is "" while hidden). Only the text; the game draws it.</summary>
+        public static void ShowedHud(string main, string debug)
+        {
+            if (!Live) return;
+            string Q(string t) => "\"" + (t ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+            HawkesNet_Hud("{\"main\":" + Q(main) + ",\"debug\":" + Q(debug) + "}");
+        }
 
         /// <summary>Where the web SDK loads from (RunInBackground; a room's own sdkUrl is in its options).</summary>
         public static string SdkUrl = "https://net.hawkesgen.ai/sdk/hawkes-net@1.mjs";
