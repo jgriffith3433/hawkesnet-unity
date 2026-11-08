@@ -145,9 +145,11 @@ const clickJoin = async () => {
   const c = document.querySelector('canvas');
   if (!c) return;
   const r = c.getBoundingClientRect();
+  // The Join button sits at y 236-272 of the 960x600 canvas (248 is on it with the room line shown or not); the same
+  // spot is Cancel while connecting, so callers only click before any status line has appeared.
   for (const fx of [0.5, 0.667]) {
-    const init = { bubbles: true, cancelable: true, clientX: r.left + r.width * fx, clientY: r.top + r.height * (301 / 600), button: 0, view: window };
-    for (const [t, b] of [['mousemove', 0], ['mousedown', 1], ['mouseup', 0], ['click', 0]]) c.dispatchEvent(new MouseEvent(t, { ...init, buttons: b }));
+    const init = { bubbles: true, cancelable: true, clientX: r.left + r.width * fx, clientY: r.top + r.height * (248 / 600), button: 0, view: window };
+    for (const [t, b] of [['mousemove', 0], ['mousedown', 1], ['mouseup', 0], ['click', 0]]) { c.dispatchEvent(new MouseEvent(t, { ...init, buttons: b })); await sleep(60); }
     await sleep(150);
   }
 };
@@ -208,7 +210,13 @@ async function startScreen() {
 
   const mark = performance.now();
   if (!await srCheck('Pressing Join connects: the status says connecting, then online', async () => {
-    await tap('Enter');
+    // Enter, and every few tries a real click on Join, until the lobby says anything (connecting / offline): one scripted
+    // Enter alone was not always taken, and the screen then sat there silent.
+    for (let i = 0; i < 8 && !online() && statusLines(mark).length === 0; i++) {
+      await tap('Enter');
+      if (i % 2 === 1) await clickJoin();
+      await sleep(1200);
+    }
     const ms = await waitFor(online, 30000, () => `the room to come online (status lines: ${statusLines(mark).join(' / ') || 'none'})`);
     const lines = statusLines(mark);
     const iC = lines.findIndex((t) => t.startsWith('connecting')), iO = lines.findIndex((t) => t.startsWith('online'));
