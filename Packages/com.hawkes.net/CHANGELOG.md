@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.3 (2026-11-08)
+
+- **Join never does nothing.** On the start screen an emptied name field made Join (button or Enter) refuse with a line
+  under the button and no connection; it now joins as the name the screen opened with (the remembered or `?name=` one).
+  `PackageVersion` was still 0.9.1 and now follows package.json.
+
 ## 0.9.2 (2026-11-08)
 
 - **Avatars sample: capsules never share a spot.** Within `MinGap` (0.6 m) of another player the local capsule is eased

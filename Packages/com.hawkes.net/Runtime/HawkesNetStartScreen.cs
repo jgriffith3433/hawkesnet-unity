@@ -47,6 +47,7 @@ namespace Hawkes
         /// <summary>What is wrong with the fields or the setup, in words ("" when nothing): shown under the Join button.</summary>
         public string Error { get; private set; } = "";
 
+        string defaultName = ""; // the name the screen opened with: what an empty field falls back to
         HawkesNetLobby lobby, hooked;
         bool entered; // joined and online at least once since the last Join: the screen shrinks to the bar
         string lastLogged = "";
@@ -71,6 +72,7 @@ namespace Hawkes
             PlayerName = CleanName(q.Length > 0 ? q : saved);
             if (PlayerName.Length == 0 && Avatars != null) PlayerName = CleanName(Avatars.PlayerName);
             if (PlayerName.Length == 0) PlayerName = "Player " + UnityEngine.Random.Range(100, 999);
+            defaultName = PlayerName;
             RoomField = Area;
         }
 
@@ -190,15 +192,17 @@ namespace Hawkes
 
         // ------------------------------------------------------------------ joining
 
-        /// <summary>Join with the name and room in the fields (what the Join button and Enter do). Returns false, with
-        /// Error set, when the fields or the setup are not right.</summary>
+        /// <summary>Join with the name and room in the fields (what the Join button and Enter do). An empty name falls back to
+        /// the one the screen opened with. Returns false, with Error set, when the room or the setup is not right.</summary>
         public bool Join()
         {
             var l = Lobby;
             if (l == null) { Error = "Nothing to join with: set Avatars or call Attach."; return false; }
             string name = CleanName(PlayerName), room = RoomField.Trim();
             if (!AllowRoomEntry) room = Area;
-            if (name.Length == 0) { Error = "Type a name first."; return false; }
+            // An emptied name field must not make Join do nothing: join as the name the screen opened with.
+            if (name.Length == 0) name = CleanName(defaultName);
+            if (name.Length == 0) name = "Player " + UnityEngine.Random.Range(100, 999);
             if (!ValidRoom(room)) { Error = "A room name uses letters, numbers, - and _ (up to " + MaxRoom + ")."; return false; }
             if (SetupMissing(l)) { Error = "Not set up yet: see the steps above."; return false; }
             Error = "";
