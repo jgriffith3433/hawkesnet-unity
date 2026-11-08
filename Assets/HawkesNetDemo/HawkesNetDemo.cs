@@ -28,6 +28,10 @@ namespace Hawkes.Demo
         public float TurnSpeed = 720f;
         [Tooltip("Half the side of the square arena (m): the ground and its edge walls are at plus and minus this.")]
         public float ArenaHalf = 12f;
+        [Tooltip("Closest two capsules may stand (m): nearer than this the local one is eased away, so they never z-fight.")]
+        public float MinGap = 0.6f;
+        [Tooltip("How fast the local player is eased apart from another (m a second).")]
+        public float SeparateSpeed = 3f;
 
         // What rides with the pose: the player's colour ("#rrggbb"), the emote last played (0 none, 1 wave, 2 hop,
         // 3 spin) and how many emotes this player has played (so the same emote twice in a row plays twice, and one
@@ -211,6 +215,24 @@ namespace Hawkes.Demo
                 player.position += move.normalized * Speed * Time.deltaTime;
                 // Turn towards where it walks (not at once): the others see the same smooth turn.
                 player.rotation = Quaternion.RotateTowards(player.rotation, Quaternion.LookRotation(move), TurnSpeed * Time.deltaTime);
+            }
+            // Two capsules never share a spot (they would z-fight): within MinGap of another player, ease away from it.
+            // Local only: the others do the same on their side, and the push syncs through the pose like any move.
+            string selfId = avatars.Lobby != null && avatars.Lobby.Room != null ? avatars.Lobby.Room.Id : "";
+            foreach (var other in avatars.Remotes)
+            {
+                var r = other.Value;
+                if (!r.Object || !r.Object.activeSelf) continue;
+                var apart = player.position - r.Object.transform.position;
+                apart.y = 0f;
+                float gap = apart.magnitude;
+                if (gap >= MinGap) continue;
+                // On the very same spot there is no "away": each side picks one from the room id, opposite for the two.
+                var dir = gap > 0.001f ? apart / gap : Vector3.right;
+                if (gap <= 0.001f && string.CompareOrdinal(selfId, other.Key) < 0) dir = Vector3.left;
+                // Gentle: at least SeparateSpeed, and a share of what is left so walking into someone cannot pass through.
+                float deficit = MinGap - gap;
+                player.position += dir * Mathf.Min(deficit, Mathf.Max(SeparateSpeed * Time.deltaTime, deficit * Mathf.Clamp01(12f * Time.deltaTime)));
             }
             // The capsule stands on the ground (centre at 1 m, radius 0.5 m) and stays inside the walls, whatever the input.
             float limit = ArenaHalf - 0.5f;
