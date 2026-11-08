@@ -498,7 +498,7 @@ async function crowd() {
   sr.progress = 0.5;
 
   // 3. Far away from the bot: 30 s of walking in every direction. Each pose must stay on the ground inside the walls.
-  at = [40, 1, 40];
+  at = [start[0] > 0 ? -8 : 8, 1, 8]; // inside the walls and in frame: a capsule out beyond them reads as a stray object
   srEvent('phase', 'walk in every direction for 30 s');
   let worstY = 0, far = 0, bad = '', moved = 0, prev = sent.slice();
   const dirs = [['d'], ['s'], ['a'], ['w'], ['d', 'w'], ['a', 's'], ['d', 's'], ['a', 'w'], ['d'], ['w']];
