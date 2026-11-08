@@ -5,9 +5,9 @@ using UnityEngine;
 namespace Hawkes.Samples
 {
     /// <summary>
-    /// The smallest multiplayer scene with some personality: a capsule you walk with WASD (or the arrow keys), a camera
+    /// The smallest multiplayer scene with some personality: a capsule you walk with WASD (or the arrow keys, or a touch joystick on a phone), a camera
     /// behind it, and a capsule for every other player in the area's shared room, through HawkesNetAvatars. Each player
-    /// has a colour and a floating name, and three emotes on the keys 1, 2 and 3 (wave, hop, spin) that the others see.
+    /// has a colour and a floating name, and three emotes on the keys 1, 2 and 3 (or three buttons on a phone) (wave, hop, spin) that the others see.
     /// The colour and the emote ride in the pose's Extra values (HawkesNetAvatars.Extra / Remote.Extra), so any game can
     /// do the same. Put it on an empty GameObject in an empty scene, set Project, build for WebGL and open two tabs.
     /// The others are drawn smoothly whatever the connection (HawkesNetAvatars plays them through a HawkesNetTrack);
@@ -56,10 +56,11 @@ namespace Hawkes.Samples
         Transform player;
         HawkesNetAvatars avatars;
         HawkesNetStartScreen start;
+        HawkesNetTouchControls touch;
         readonly View me = new View();
         readonly Dictionary<string, View> views = new Dictionary<string, View>();
         readonly Style style = new Style();
-        GUIStyle nameStyle, bubbleStyle;
+        GUIStyle nameStyle, bubbleStyle, hudStyle;
 
         // CreatePrimitive gives the built-in Default-Material (the Standard shader). Nothing in this scene references
         // that shader, so a WebGL build strips it and every primitive renders as Unity's error magenta. So each object
@@ -156,6 +157,9 @@ namespace Hawkes.Samples
             start = gameObject.AddComponent<HawkesNetStartScreen>();
             start.Avatars = avatars;
             start.Area = Area;
+            // On a phone: a joystick on the left, three emote buttons on the right (nothing shows with a mouse and keyboard).
+            touch = gameObject.AddComponent<HawkesNetTouchControls>();
+            touch.StartScreen = start;
             gameObject.SetActive(true);
         }
 
@@ -207,9 +211,11 @@ namespace Hawkes.Samples
             // While the start screen is up the player is typing a name: no walking, no emotes.
             bool typing = start != null && start.Blocking;
             var move = typing ? Vector3.zero : new Vector3(Input.GetAxisRaw("Horizontal"), 0f, Input.GetAxisRaw("Vertical"));
+            // The touch joystick walks like the keys do (a gentle push walks slower); the keys win when both are down.
+            if (!typing && move.sqrMagnitude <= 0.01f && touch != null && touch.Move.sqrMagnitude > 0.0001f) move = new Vector3(touch.Move.x, 0f, touch.Move.y);
             if (move.sqrMagnitude > 0.01f)
             {
-                player.position += move.normalized * Speed * Time.deltaTime;
+                player.position += move.normalized * Speed * Mathf.Min(1f, move.magnitude) * Time.deltaTime;
                 // Turn towards where it walks (not at once): the others see the same smooth turn.
                 player.rotation = Quaternion.RotateTowards(player.rotation, Quaternion.LookRotation(move), TurnSpeed * Time.deltaTime);
             }
@@ -243,6 +249,13 @@ namespace Hawkes.Samples
                     style.e = i; style.n++;
                     Play(me, i);
                 }
+            // The emote buttons on a phone.
+            int tapped = touch != null ? touch.TakeEmote() : 0;
+            if (tapped > 0 && !typing)
+            {
+                style.e = tapped; style.n++;
+                Play(me, tapped);
+            }
             Animate(me);
 
             var room = avatars.Lobby != null ? avatars.Lobby.Room : null;
@@ -314,13 +327,22 @@ namespace Hawkes.Samples
             v.Body.localRotation = rot;
         }
 
+        // How much bigger than a desktop window's pixels this screen's are: 1 with a mouse, more on a phone.
+        float Ui => touch != null && touch.Active ? Mathf.Max(1f, Mathf.Min(Screen.width, Screen.height) / 400f) : 1f;
+
         void OnGUI()
         {
             var lobby = avatars != null ? avatars.Lobby : null;
             if (lobby == null) return;
+            float ui = Ui;
+            bool phone = touch != null && touch.Active;
+            if (hudStyle == null) hudStyle = new GUIStyle(GUI.skin.label);
+            hudStyle.fontSize = phone ? Mathf.RoundToInt(13f * ui) : 0;
+            // On a phone the stick rests bottom left and the buttons bottom right: the text sits between them.
+            float hx = phone ? Screen.width * 0.42f : 10f, hw = phone ? Screen.width * 0.34f : 640f, lineH = 24f * ui;
             if (!start.Blocking)
             {
-                GUI.Label(new Rect(10, Screen.height - 28, 640, 24), "Move: WASD / arrows · Emotes: 1 wave · 2 hop · 3 spin");
+                if (!phone) GUI.Label(new Rect(10, Screen.height - 28, 640, 24), "Move: WASD / arrows · Emotes: 1 wave · 2 hop · 3 spin");
                 // How the others are drawn: how far behind (the delay each one's connection needs), and whether one is
                 // being carried on past its newest pose right now.
                 if (avatars.Remotes.Count > 0)
@@ -328,13 +350,13 @@ namespace Hawkes.Samples
                     double most = 0, ahead = 0;
                     foreach (var r in avatars.Remotes.Values) { most = Math.Max(most, r.Track.Delay); ahead = Math.Max(ahead, r.Track.Ahead); }
                     string latency = $"Latency: {most:0} ms", detail = "";
-                    GUI.Label(new Rect(10, Screen.height - 50, 640, 24), latency);
+                    GUI.Label(new Rect(hx, Screen.height - (phone ? lineH * 1.5f : 50f), hw, lineH), latency, hudStyle);
                     // F3 toggles the detail: how far behind others are drawn, and how far one is carried on past its newest pose.
                     if (debug)
                     {
                         string lag = HawkesNet.SimulatedLatency > 0f ? $" · simulated lag {HawkesNet.SimulatedLatency:0} ms" + (HawkesNet.SimulatedJitter > 0f ? $" ± {HawkesNet.SimulatedJitter:0}" : "") : "";
                         detail = $"Others drawn {most:0} ms behind{(ahead > 0 ? $" · predicting {ahead:0} ms" : "")}{lag}";
-                        GUI.Label(new Rect(10, Screen.height - 72, 640, 24), detail);
+                        GUI.Label(new Rect(hx, Screen.height - (phone ? lineH * 3f : 72f), hw, lineH * 1.5f), detail, hudStyle);
                     }
                     // Tell a tool in the page (the playtest bot) what the HUD says, when it changes.
                     if (Event.current.type == EventType.Repaint && (latency != hudMain || detail != hudDetail)) { hudMain = latency; hudDetail = detail; HawkesNet.ShowedHud(latency, detail); }
@@ -346,9 +368,12 @@ namespace Hawkes.Samples
             if (!cam) return;
             if (nameStyle == null)
             {
-                nameStyle = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontSize = 15, fontStyle = FontStyle.Bold };
-                bubbleStyle = new GUIStyle(nameStyle) { fontSize = 17 };
+                nameStyle = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold };
+                bubbleStyle = new GUIStyle(nameStyle);
             }
+            // Names and emote words grow with the screen on a phone (its pixels are small).
+            nameStyle.fontSize = Mathf.RoundToInt(15f * ui);
+            bubbleStyle.fontSize = Mathf.RoundToInt(17f * ui);
             Label(cam, player, avatars.PlayerName + " (you)", me);
             foreach (var kv in avatars.Remotes)
             {
@@ -365,17 +390,17 @@ namespace Hawkes.Samples
         {
             var screen = cam.WorldToScreenPoint(who.position + Vector3.up * 1.5f);
             if (screen.z <= 0f) return;
-            float x = screen.x, y = Screen.height - screen.y;
+            float x = screen.x, y = Screen.height - screen.y, ui = Ui;
             var old = GUI.color;
             GUI.color = new Color(0f, 0f, 0f, 0.85f);
-            GUI.Label(new Rect(x - 101f, y - 9f, 200f, 24f), text, nameStyle);
+            GUI.Label(new Rect(x - 101f * ui, y - 9f * ui, 200f * ui, 24f * ui), text, nameStyle);
             GUI.color = Color.Lerp(Color.white, v.Color, 0.6f);
-            GUI.Label(new Rect(x - 100f, y - 10f, 200f, 24f), text, nameStyle);
+            GUI.Label(new Rect(x - 100f * ui, y - 10f * ui, 200f * ui, 24f * ui), text, nameStyle);
             float since = Time.time - v.Started;
             if (v.Emote > 0 && since < BubbleSeconds)
             {
                 GUI.color = new Color(1f, 1f, 1f, Mathf.Clamp01((BubbleSeconds - since) * 2f));
-                GUI.Label(new Rect(x - 100f, y - 36f - Mathf.Min(since, 0.4f) * 20f, 200f, 26f), EmoteSays[v.Emote] + " (" + EmoteNames[v.Emote] + ")", bubbleStyle);
+                GUI.Label(new Rect(x - 100f * ui, y - (36f + Mathf.Min(since, 0.4f) * 20f) * ui, 200f * ui, 26f * ui), EmoteSays[v.Emote] + " (" + EmoteNames[v.Emote] + ")", bubbleStyle);
             }
             GUI.color = old;
         }

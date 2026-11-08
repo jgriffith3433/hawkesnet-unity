@@ -153,15 +153,160 @@ const clickJoin = async () => {
     await sleep(150);
   }
 };
+// ---------------------------------------------------------------------------------------------------------------------
+// Fingers. Unity reads touches from the canvas's touch events, so the phone scenario sends the events a finger makes
+// (touchstart, touchmove, touchend with a real Touch each): nothing reaches into the game. Where the buttons and the joystick
+// are comes from the game itself (HawkesNetStartScreen and HawkesNetTouchControls tell window.__hawkesNet.touch), in
+// fractions of the canvas.
+const touchState = () => globalThis.__hawkesNet?.touch ?? null;
+const canvasAt = (fx, fy) => { const r = document.querySelector('canvas').getBoundingClientRect(); return { x: r.left + r.width * fx, y: r.top + r.height * fy }; };
+let fingerId = 100;
+const finger = (type, id, x, y) => {
+  const c = document.querySelector('canvas');
+  if (typeof Touch !== 'function' || typeof TouchEvent !== 'function') throw new Error('this browser has no touch events (Touch/TouchEvent): a phone playtest needs touch emulation');
+  const t = new Touch({ identifier: id, target: c, clientX: x, clientY: y, pageX: x + scrollX, pageY: y + scrollY, screenX: x, screenY: y, radiusX: 8, radiusY: 8, force: 1 });
+  const live = type === 'touchend' || type === 'touchcancel' ? [] : [t];
+  c.dispatchEvent(new TouchEvent(type, { touches: live, targetTouches: live, changedTouches: [t], bubbles: true, cancelable: true, view: window }));
+};
+const tapAt = async (x, y, hold = 90) => { const id = fingerId++; finger('touchstart', id, x, y); await sleep(hold); finger('touchend', id, x, y); await sleep(120); };
+const tapFraction = (fx, fy) => { const p = canvasAt(fx, fy); return tapAt(p.x, p.y); };
+const formButton = (name) => { const b = touchState()?.form?.[name]; if (!b) throw new Error(`the game does not show a "${name}" button (window.__hawkesNet.touch.form has ${Object.keys(touchState()?.form ?? {}).join(', ') || 'nothing'})`); return b; };
+const tapForm = (name) => { const b = formButton(name); return tapFraction(b.x + b.w / 2, b.y + b.h / 2); };
+// Puts a thumb down at (fx, fy), drags it by (dx, dy) fractions of the canvas height in a few steps, holds, and lets go.
+async function drag(from, dx, dy, holdMs, onHold) {
+  const c = document.querySelector('canvas'), r = c.getBoundingClientRect(), id = fingerId++;
+  const x0 = r.left + r.width * from.x, y0 = r.top + r.height * from.y, px = dx * r.height, py = dy * r.height;
+  finger('touchstart', id, x0, y0); await sleep(80);
+  for (let i = 1; i <= 6; i++) { finger('touchmove', id, x0 + px * i / 6, y0 + py * i / 6); await sleep(40); }
+  const t0 = performance.now();
+  while (performance.now() - t0 < holdMs) { finger('touchmove', id, x0 + px, y0 + py); await onHold?.(); await sleep(60); }
+  finger('touchend', id, x0 + px, y0 + py); await sleep(150);
+}
+// The phone's join form: types into the page's own text box (the one the phone keyboard raises), like a player does.
+async function typeIntoBox(text) {
+  await waitFor(() => document.getElementById('hawkes-net-text-input'), 5000, 'the text box for the phone keyboard to open after tapping the field');
+  const input = document.getElementById('hawkes-net-text-input');
+  input.focus(); input.value = '';
+  input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward' }));
+  for (const ch of text) { input.value += ch; input.dispatchEvent(new InputEvent('input', { bubbles: true, data: ch, inputType: 'insertText' })); await sleep(40); }
+  await sleep(250);
+  document.getElementById('hawkes-net-text-ok').click();
+  await waitFor(() => !document.getElementById('hawkes-net-text'), 3000, 'the text box to close on OK');
+}
+
+async function phone() {
+  const c = document.querySelector('canvas');
+  const dpr = window.devicePixelRatio || 1;
+  // 1. The page: the canvas is the screen.
+  if (!await srCheck('At phone size the canvas fills the screen with no sideways scroll', async () => {
+    await waitFor(startUp, 120000, 'Unity to show the start screen');
+    const r = c.getBoundingClientRect(), de = document.documentElement;
+    const w = innerWidth, h = innerHeight;
+    sr.metrics.viewport = `${w}x${h}@${dpr}`; sr.metrics.canvasCss = `${Math.round(r.width)}x${Math.round(r.height)}`; sr.metrics.canvasPx = `${c.width}x${c.height}`;
+    srEvent('view', `viewport ${w}x${h} at ${dpr}x, canvas ${Math.round(r.width)}x${Math.round(r.height)} css px (${c.width}x${c.height} drawn)`);
+    if (w > 700) sr.problems.push({ severity: 'warning', message: `the page is ${w} px wide, not phone size: the phone checks ran at this size` });
+    if (Math.abs(r.left) > 1 || Math.abs(r.top) > 1 || Math.abs(r.width - w) > 1.5 || Math.abs(r.height - h) > 1.5) throw new Error(`the canvas is ${Math.round(r.width)}x${Math.round(r.height)} at ${Math.round(r.left)},${Math.round(r.top)} on a ${w}x${h} screen`);
+    if (de.scrollWidth > w + 1 || document.body.scrollWidth > w + 1) throw new Error(`the page is wider than the screen (${Math.max(de.scrollWidth, document.body.scrollWidth)} px of ${w})`);
+    if (de.scrollHeight > h + 1) throw new Error(`the page is taller than the screen (${de.scrollHeight} px of ${h})`);
+    scrollTo(300, 0); await sleep(100);
+    const moved = scrollX; scrollTo(0, 0);
+    if (moved > 0) throw new Error(`the page scrolled sideways by ${moved} px`);
+    const want = r.width * dpr;
+    if (Math.abs(c.width - want) > Math.max(2, want * 0.02)) throw new Error(`the canvas is drawn ${c.width} px wide for ${Math.round(want)} px of screen (devicePixelRatio ${dpr}): blurry or too heavy`);
+    return `${Math.round(r.width)}x${Math.round(r.height)} css px, drawn ${c.width}x${c.height} at ${dpr}x, no scroll`;
+  })) return;
+  sr.progress = 0.15;
+
+  // 2. The Join form by touch: tap the name, type with the phone's text box, tap Join.
+  const typed = 'Phone Ada';
+  const mark = performance.now();
+  if (!await srCheck('The Join form can be filled and submitted by touch', async () => {
+    await waitFor(() => touchState()?.form?.join, 20000, 'the Join button to be shown (the game reports its buttons)');
+    await tapForm('name');
+    srEvent('tap', 'the name field');
+    await typeIntoBox(typed);
+    srEvent('typed', typed);
+    await tapForm('join');
+    srEvent('tap', 'Join');
+    const ms = await waitFor(online, 40000, () => `the room to come online after tapping Join (status lines: ${statusLines(mark).join(' / ') || 'none'})`);
+    sr.metrics.joinMs = Math.round(ms);
+    const net = slot().net;
+    await waitFor(() => net.peers?.get(net.id), 10000, 'the room to list this player');
+    const got = net.peers.get(net.id)?.name ?? net.peers.get(net.id);
+    if (got !== typed) throw new Error(`joined as "${got}", not the "${typed}" typed in the box`);
+    return `typed "${typed}", tapped Join, ${statusLines(mark).join(' -> ')}`;
+  })) return;
+  sr.progress = 0.4;
+
+  const net = slot().net;
+  main(); // wraps the pose call, so what the Unity player sends is seen
+  await waitFor(() => sent, 5000, 'the Unity player to send its place');
+  await waitFor(() => touchState()?.stick, 5000, 'the game to report its joystick');
+
+  // 3. The joystick: a thumb on the left, drag right then up; the capsule must go there.
+  await srCheck('A touch joystick moves the avatar', async () => {
+    const t = touchState();
+    if (!t.active) throw new Error('the on-screen controls are not shown on this touch screen');
+    const from = { x: t.stick.x, y: t.stick.y };
+    // Drag by 0.9 of the stick's radius (drag() takes fractions of the canvas height both ways).
+    const a = sent.slice();
+    let heldSeen = false, moveSeen = 0;
+    srEvent('touch', 'thumb on the joystick, dragging right');
+    await drag(from, t.stick.r * 0.9, 0, 1600, async () => { const s = touchState(); if (s.holding) heldSeen = true; moveSeen = Math.max(moveSeen, Math.hypot(...(s.move ?? [0, 0]))); });
+    const b = sent.slice();
+    const dx = b[0] - a[0];
+    srEvent('moved', `right: ${dx.toFixed(1)} m`);
+    if (!heldSeen) throw new Error('the game never saw a thumb on the joystick');
+    if (dx < 1.5) throw new Error(`dragging right moved the avatar only ${dx.toFixed(2)} m east (stick read ${moveSeen.toFixed(2)})`);
+    srEvent('touch', 'dragging up the screen');
+    await drag(from, 0, -t.stick.r * 0.9, 1600);
+    const d = sent.slice(), dz = d[2] - b[2];
+    srEvent('moved', `up: ${dz.toFixed(1)} m`);
+    if (dz < 1.5) throw new Error(`dragging up moved the avatar only ${dz.toFixed(2)} m north`);
+    await sleep(400);
+    const e1 = sent.slice(); await sleep(500); const e2 = sent.slice();
+    if (touchState().holding || Math.hypot(e2[0] - e1[0], e2[2] - e1[2]) > 0.05) throw new Error('the avatar kept walking after the thumb was lifted');
+    sr.metrics.joystickEastM = Math.round(dx * 10) / 10; sr.metrics.joystickNorthM = Math.round(dz * 10) / 10;
+    return `right ${dx.toFixed(1)} m, up ${dz.toFixed(1)} m, stopped when let go`;
+  });
+  sr.progress = 0.7;
+
+  // 4. The emote buttons: a second player is in the room and must see each emote.
+  const bot = smoothBot = await openBotPlayer();
+  await waitFor(() => (bot.ready === true || bot.status === 'online') && net.peers.has(bot.id), 15000, 'the second player to join the room');
+  const seen = {};
+  bot.onPose((id, st) => { if (id === net.id) { seen.e = st?.e; seen.n = st?.n; } });
+  bot.pose([3, 1, 3], 0);
+  await sleep(600);
+  await srCheck('Emote buttons on screen play emotes the other player sees', async () => {
+    const out = [];
+    for (const k of [1, 2, 3]) {
+      const b = touchState().emotes.find((x) => x.n === k);
+      if (!b) throw new Error(`no on-screen button for emote ${k}`);
+      const n0 = seen.n ?? 0, taps0 = touchState().taps ?? 0;
+      srEvent('tap', `emote button ${k} (${EMOTES[k]})`);
+      await tapFraction(b.x, b.y);
+      await waitFor(() => seen.e === k && (seen.n ?? 0) > n0, 5000, () => `the second player to see emote ${k} after the tap (saw e=${seen.e}, n=${seen.n}; the game counted ${touchState().taps} taps)`);
+      if ((touchState().taps ?? 0) <= taps0) throw new Error(`the game did not count the tap on button ${k}`);
+      out.push(EMOTES[k]);
+      await sleep(1300); // the animation and its caption on the footage
+    }
+    return `the other player saw ${out.join(', ')}`;
+  });
+  sr.progress = 1;
+}
+
 const baseScenarios = api.scenarios.bind(api);
-api.scenarios = () => [...baseScenarios(), { id: 'start-screen', title: 'Start screen: name, Join, status connecting/online, a failed join with its reason', seconds: 90, tags: ['full', 'ui'],
+api.scenarios = () => [...baseScenarios(), { id: 'phone', title: 'Phone: the canvas fills the screen, join by touch, touch joystick, emote buttons', seconds: 90, tags: ['full', 'ui', 'phone'],
+  description: 'Meant for a phone-size page with touch (390x844). Checks the canvas is the whole viewport with no sideways scroll and is drawn at the screen\'s pixel ratio; taps the name field, types in the phone text box and taps Join; drags the on-screen joystick right and up and checks the avatar walked there and stopped when the thumb lifted; then taps the three emote buttons and checks a second player sees each emote. All with touch events on the canvas.' },
+{ id: 'start-screen', title: 'Start screen: name, Join, status connecting/online, a failed join with its reason', seconds: 90, tags: ['full', 'ui'],
   description: 'Types a name on the start screen, presses Join and checks the status line goes connecting then online and the other players see the name; then refuses the ticket request, checks the status says Failed with the reason, and joins again.' },
 { id: 'smooth', title: 'Smooth remote avatar: moves every frame, no snapping at 150 ms latency, prediction capped at 250 ms then holds, Latency HUD and F3 debug line', seconds: 75, tags: ['full', 'netcode'],
   description: 'Joins from the start screen, opens a second player that walks a figure eight in front of the camera, and reads where Unity draws it every frame (window.__hawkesNet.watch): 6 s on the plain connection (it must move every frame, facing where it goes), then 10 s with 150 ms (+0-30 ms jitter) of simulated latency on the poses (no frame may step faster than twice its top speed or turn more than twice its top turn rate). Then it checks the HUD (plain "Latency: N ms"; the detail line only after F3), and stops the bot\'s poses for 3 s: the prediction must never pass 250 ms and the avatar must hold still.' },
 { id: 'crowd', title: 'Two avatars never share a spot, and a 30 s walk keeps the avatar on the ground inside the edge walls', seconds: 90, tags: ['full', 'avatars'],
   description: 'Joins from the start screen and opens a second player. Walks the Unity player (real key presses) straight at the bot and keeps pushing: it must stay apart (never on the same centre), and settle at least 0.55 m away once the keys are let go. Then the bot is put exactly on the Unity player\'s spot (a setup shortcut): the Unity player must ease apart to 0.55 m or more. Then the bot goes far away and the player walks in every direction for 30 s (d, s, a, w, then diagonals): every pose it sends must stay on the ground (y = 1) and inside the arena (the edge walls), and it must reach an edge.' }];
 // The scenarios played here rather than by net-playtest.mjs: their own run, panel and report.
-const SIDE = ['start-screen', 'smooth', 'crowd'];
+const SIDE = ['start-screen', 'smooth', 'crowd', 'phone'];
 
 let sr = null; // the start-screen run
 const r1 = (n) => Math.round(n * 10) / 10;
@@ -542,8 +687,8 @@ api.start = async (id, options = {}) => {
   sr = { id, t0: performance.now(), done: false, lines: [], events: [], problems: [], metrics: {}, progress: 0, state: { ready: true, status: 'running', progress: 0, scene: 'Demo' } };
   const mine = sr;
   srEvent('start', id); srEvent('scene', 'Demo'); srPanel();
-  try { await (id === 'smooth' ? smooth() : id === 'crowd' ? crowd() : startScreen()); } catch (e) { sr.problems.push({ severity: 'bug', message: `bot error: ${e?.message ?? e}` }); }
-  finally { if (id === 'smooth' || id === 'crowd') await smoothEnd(); }
+  try { await (id === 'smooth' ? smooth() : id === 'crowd' ? crowd() : id === 'phone' ? phone() : startScreen()); } catch (e) { sr.problems.push({ severity: 'bug', message: `bot error: ${e?.message ?? e}` }); }
+  finally { if (id === 'smooth' || id === 'crowd' || id === 'phone') await smoothEnd(); }
   if (mine !== sr) return;
   mine.done = true; mine.seconds = srNow();
   mine.state.status = mine.lines.length && mine.lines.every((l) => l.ok) ? 'won' : 'lost';

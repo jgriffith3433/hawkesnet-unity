@@ -104,12 +104,28 @@ namespace Hawkes.Demo.Editor
         static void AddPlaytest(string outDir)
         {
             var web = Path.GetFullPath("DevTools/demo-web");
-            foreach (var f in new[] { "net-playtest.mjs", "unity-playtest.mjs" }) File.Copy(Path.Combine(web, f), Path.Combine(outDir, f), true);
+            foreach (var f in new[] { "net-playtest.mjs", "unity-playtest.mjs", "mobile.css" }) File.Copy(Path.Combine(web, f), Path.Combine(outDir, f), true);
             var index = Path.Combine(outDir, "index.html");
             if (!File.Exists(index)) throw new Exception("the WebGL build has no index.html to add the playtest bot to");
             const string tag = "<script type=\"module\" src=\"unity-playtest.mjs\"></script>";
             var html = File.ReadAllText(index);
-            if (!html.Contains(tag)) File.WriteAllText(index, html.Contains("</body>") ? html.Replace("</body>", tag + "\n</body>") : html + "\n" + tag + "\n");
+            html = MakeMobileFriendly(html);
+            if (!html.Contains(tag)) html = html.Contains("</body>") ? html.Replace("</body>", tag + "\n</body>") : html + "\n" + tag + "\n";
+            File.WriteAllText(index, html);
+        }
+
+        /// <summary>
+        /// The demo page on a phone: one viewport meta (device width, no zoom), the style sheet that makes the canvas fill the
+        /// screen (mobile.css), and the template's "devicePixelRatio = 1" (if this Unity's template sets it) left at the
+        /// phone's own ratio, so the canvas is drawn at the screen's real resolution.
+        /// </summary>
+        static string MakeMobileFriendly(string html)
+        {
+            html = System.Text.RegularExpressions.Regex.Replace(html, "<meta\\s+name=[\"']viewport[\"'][^>]*>\\s*", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            html = System.Text.RegularExpressions.Regex.Replace(html, "(?m)^(\\s*)config\\.devicePixelRatio\\s*=\\s*1\\s*;", "$1config.devicePixelRatio = window.devicePixelRatio;");
+            const string head = "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover\">\n<link rel=\"stylesheet\" href=\"mobile.css\">\n";
+            if (html.Contains("href=\"mobile.css\"")) return html;
+            return html.Contains("</head>") ? html.Replace("</head>", head + "</head>") : head + html;
         }
     }
 }

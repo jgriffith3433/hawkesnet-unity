@@ -247,7 +247,7 @@ namespace Hawkes
     public static class HawkesNet
     {
         /// <summary>This package's version (what package.json says; keep the two in step on a release). The start screen shows it.</summary>
-        public const string PackageVersion = "0.9.3";
+        public const string PackageVersion = "0.10.0";
 
 #if UNITY_WEBGL && !UNITY_EDITOR
         [DllImport("__Internal")] static extern void HawkesNet_Join(int handle, string room, string optionsJson, string receiver);
@@ -265,6 +265,11 @@ namespace Hawkes
         [DllImport("__Internal")] static extern int HawkesNet_Watched(int handle);
         [DllImport("__Internal")] static extern void HawkesNet_Drawn(int handle, string json);
         [DllImport("__Internal")] static extern void HawkesNet_Hud(string json);
+        [DllImport("__Internal")] static extern int HawkesNet_IsTouch();
+        [DllImport("__Internal")] static extern void HawkesNet_Touch(string json);
+        [DllImport("__Internal")] static extern void HawkesNet_TextOpen(string label, string value, int max, string hint);
+        [DllImport("__Internal")] static extern int HawkesNet_TextState();
+        [DllImport("__Internal")] static extern string HawkesNet_TextValue();
         /// <summary>A WebGL build: the page's SDK carries the rooms. Elsewhere the managed client does.</summary>
         public static readonly bool Live = true;
 #else
@@ -283,6 +288,11 @@ namespace Hawkes
         static int HawkesNet_Watched(int handle) => 0;
         static void HawkesNet_Drawn(int handle, string json) { }
         static void HawkesNet_Hud(string json) { }
+        static int HawkesNet_IsTouch() => 0;
+        static void HawkesNet_Touch(string json) { }
+        static void HawkesNet_TextOpen(string label, string value, int max, string hint) { }
+        static int HawkesNet_TextState() => 0;
+        static string HawkesNet_TextValue() => "";
         public static readonly bool Live = false;
 #endif
 
@@ -335,6 +345,49 @@ namespace Hawkes
             if (!Live) return;
             string Q(string t) => "\"" + (t ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
             HawkesNet_Hud("{\"main\":" + Q(main) + ",\"debug\":" + Q(debug) + "}");
+        }
+
+        /// <summary>True on a phone or tablet: the main pointer is a finger (a WebGL page says so; elsewhere the device has a
+        /// touch screen and is a handheld). Games show on-screen controls then (HawkesNetTouchControls).</summary>
+        public static bool IsTouchDevice()
+        {
+            // ?touch=1 on the page's address shows the touch controls anywhere (to try them on a desktop browser).
+            if (HawkesNetLobby.Query("touch") == "1") return true;
+            if (Live) return HawkesNet_IsTouch() == 1;
+            return Application.isMobilePlatform;
+        }
+
+        /// <summary>Where the on-screen controls are and what they read (WebGL only), for a tool in the page:
+        /// window.__hawkesNet.touch. HawkesNetTouchControls calls it when something changes.</summary>
+        public static void ShowedTouch(string json) { if (Live) HawkesNet_Touch(json); }
+
+        /// <summary>Whether a text box the phone keyboard can type into is available (a WebGL page on a touch device: the
+        /// canvas cannot raise the keyboard itself, so the page shows a real input). Elsewhere the game's own fields work.</summary>
+        public static bool CanAskText => Live && IsTouchDevice();
+
+        /// <summary>Opens that text box with a label, the current text and a limit. Poll AskTextState, then read AskTextValue.</summary>
+        public static void AskText(string label, string value, int max, string hint)
+        {
+            if (!Live) return;
+#if UNITY_WEBGL && !UNITY_EDITOR
+            // Unity swallows every key on the page by default, so the box could not be typed into.
+            WebGLInput.captureAllKeyboardInput = false;
+#endif
+            HawkesNet_TextOpen(label ?? "", value ?? "", max, hint ?? "");
+        }
+
+        /// <summary>0 nothing open, 1 open, 2 the player pressed OK (AskTextValue has the text), 3 cancelled.</summary>
+        public static int AskTextState() => Live ? HawkesNet_TextState() : 0;
+
+        /// <summary>The text the box ended with (reading it closes the exchange).</summary>
+        public static string AskTextValue()
+        {
+            if (!Live) return "";
+            var v = HawkesNet_TextValue() ?? "";
+#if UNITY_WEBGL && !UNITY_EDITOR
+            WebGLInput.captureAllKeyboardInput = true;
+#endif
+            return v;
         }
 
         /// <summary>Where the web SDK loads from (RunInBackground; a room's own sdkUrl is in its options).</summary>

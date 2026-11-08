@@ -230,6 +230,98 @@ mergeInto(LibraryManager.library, {
     try { S.hud = JSON.parse(UTF8ToString(jsonPtr)); } catch (e) {}
   },
 
+  // Phones and tablets: 1 when the page's main pointer is a finger (or the page has touch points and a mobile browser).
+  HawkesNet_IsTouch: function () {
+    try {
+      var coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+      var mobileUa = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '') || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      return (coarse || (mobileUa && navigator.maxTouchPoints > 0)) ? 1 : 0;
+    } catch (e) { return 0; }
+  },
+
+  // Where the on-screen controls are (HawkesNet.ShowedTouch), for a tool in the page: window.__hawkesNet.touch, in fractions of
+  // the canvas (x from the left, y from the top) and what the controls read from the fingers right now. Each call's keys
+  // replace the same keys of the last (the touch controls and the start screen's form report separately).
+  HawkesNet_Touch: function (jsonPtr) {
+    var S = window.__hawkesNet = window.__hawkesNet || { rooms: {} };
+    try { var t = JSON.parse(UTF8ToString(jsonPtr)); S.touch = S.touch || {}; for (var k in t) S.touch[k] = t[k]; } catch (e) {}
+  },
+
+  // A text box the phone keyboard can type into (a game's canvas cannot raise it): a sheet over the page with a real <input>.
+  // HawkesNet_TextState: 0 nothing open, 1 open, 2 done (HawkesNet_TextValue has the text), 3 cancelled.
+  HawkesNet_TextOpen: function (labelPtr, valuePtr, max, hintPtr) {
+    var S = window.__hawkesNet = window.__hawkesNet || { rooms: {} };
+    try {
+      if (S.text && S.text.el) S.text.el.remove();
+      var label = UTF8ToString(labelPtr), value = UTF8ToString(valuePtr), hint = UTF8ToString(hintPtr);
+      var t = S.text = { state: 1, value: value, el: null };
+      var el = document.createElement('div');
+      el.id = 'hawkes-net-text';
+      el.setAttribute('style', 'position:fixed;left:0;top:0;right:0;bottom:0;z-index:100000;background:rgba(0,0,0,.6);display:flex;align-items:flex-start;justify-content:center;padding-top:12vh;font-family:system-ui,sans-serif');
+      var card = document.createElement('div');
+      card.setAttribute('style', 'width:min(92vw,380px);box-sizing:border-box;background:#0f121a;border:1px solid rgba(255,255,255,.18);border-radius:12px;padding:16px;color:#d9e0ea');
+      var h = document.createElement('div');
+      h.textContent = label;
+      h.setAttribute('style', 'font-size:18px;font-weight:700;margin-bottom:10px;color:#fff');
+      var input = document.createElement('input');
+      input.id = 'hawkes-net-text-input';
+      input.type = 'text';
+      input.value = value;
+      input.maxLength = max > 0 ? max : 64;
+      input.setAttribute('autocomplete', 'off');
+      input.setAttribute('autocapitalize', 'off');
+      input.setAttribute('autocorrect', 'off');
+      input.setAttribute('spellcheck', 'false');
+      input.setAttribute('enterkeyhint', 'done');
+      input.setAttribute('style', 'width:100%;box-sizing:border-box;font-size:18px;padding:12px;border-radius:8px;border:1px solid #4b5568;background:#1b212e;color:#fff;outline:none');
+      var note = document.createElement('div');
+      note.textContent = hint;
+      note.setAttribute('style', 'font-size:13px;color:#8d97a8;margin:8px 0 12px;min-height:1em');
+      var row = document.createElement('div');
+      row.setAttribute('style', 'display:flex;gap:10px');
+      var mk = function (id, text, bg) {
+        var b = document.createElement('button');
+        b.id = id; b.type = 'button'; b.textContent = text;
+        b.setAttribute('style', 'flex:1;font-size:17px;font-weight:700;padding:13px 0;border-radius:8px;border:0;color:#fff;background:' + bg);
+        return b;
+      };
+      var ok = mk('hawkes-net-text-ok', 'OK', '#2f7cf6'), cancel = mk('hawkes-net-text-cancel', 'Cancel', '#3a4252');
+      var finish = function (state) {
+        if (t.state !== 1) return;
+        t.state = state; t.value = input.value;
+        el.remove();
+        try { if (window.WebGLInput && window.WebGLInput.captureAllKeyboardInput === false) window.WebGLInput.captureAllKeyboardInput = true; } catch (e) {}
+      };
+      ok.onclick = function () { finish(2); };
+      cancel.onclick = function () { finish(3); };
+      // Keys typed here belong to the box, not to the game under it.
+      var keep = function (e) { e.stopPropagation(); };
+      input.addEventListener('keydown', function (e) { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); finish(2); } else if (e.key === 'Escape') { e.preventDefault(); finish(3); } });
+      input.addEventListener('keyup', keep); input.addEventListener('keypress', keep);
+      el.addEventListener('click', function (e) { if (e.target === el) finish(3); });
+      row.appendChild(cancel); row.appendChild(ok);
+      card.appendChild(h); card.appendChild(input); card.appendChild(note); card.appendChild(row);
+      el.appendChild(card);
+      document.body.appendChild(el);
+      t.el = el;
+      try { input.focus(); input.select(); } catch (e) {}
+    } catch (e) { S.text = { state: 3, value: '', el: null }; }
+  },
+
+  HawkesNet_TextState: function () {
+    var S = window.__hawkesNet;
+    return S && S.text ? S.text.state : 0;
+  },
+
+  // The text the box ended with; reading it closes the exchange (state 0).
+  HawkesNet_TextValue: function () {
+    var S = window.__hawkesNet, v = S && S.text ? String(S.text.value || '') : '';
+    if (S && S.text && S.text.state !== 1) S.text = null;
+    var n = lengthBytesUTF8(v) + 1, buf = _malloc(n);
+    stringToUTF8(v, buf, n);
+    return buf;
+  },
+
   HawkesNet_Leave: function (handle) {
     var S = window.__hawkesNet || { rooms: {} }, slot = S.rooms[handle];
     if (!slot) return;
