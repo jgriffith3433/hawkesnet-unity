@@ -155,9 +155,11 @@ const baseScenarios = api.scenarios.bind(api);
 api.scenarios = () => [...baseScenarios(), { id: 'start-screen', title: 'Start screen: name, Join, status connecting/online, a failed join with its reason', seconds: 90, tags: ['full', 'ui'],
   description: 'Types a name on the start screen, presses Join and checks the status line goes connecting then online and the other players see the name; then refuses the ticket request, checks the status says Failed with the reason, and joins again.' },
 { id: 'smooth', title: 'Smooth remote avatar: moves every frame, no snapping at 150 ms latency, prediction capped at 250 ms then holds, Latency HUD and F3 debug line', seconds: 75, tags: ['full', 'netcode'],
-  description: 'Joins from the start screen, opens a second player that walks a figure eight in front of the camera, and reads where Unity draws it every frame (window.__hawkesNet.watch): 6 s on the plain connection (it must move every frame, facing where it goes), then 10 s with 150 ms (+0-30 ms jitter) of simulated latency on the poses (no frame may step faster than twice its top speed or turn more than twice its top turn rate). Then it checks the HUD (plain "Latency: N ms"; the detail line only after F3), and stops the bot's poses for 3 s: the prediction must never pass 250 ms and the avatar must hold still.' }];
+  description: 'Joins from the start screen, opens a second player that walks a figure eight in front of the camera, and reads where Unity draws it every frame (window.__hawkesNet.watch): 6 s on the plain connection (it must move every frame, facing where it goes), then 10 s with 150 ms (+0-30 ms jitter) of simulated latency on the poses (no frame may step faster than twice its top speed or turn more than twice its top turn rate). Then it checks the HUD (plain "Latency: N ms"; the detail line only after F3), and stops the bot\'s poses for 3 s: the prediction must never pass 250 ms and the avatar must hold still.' },
+{ id: 'crowd', title: 'Two avatars never share a spot, and a 30 s walk keeps the avatar on the ground inside the edge walls', seconds: 90, tags: ['full', 'avatars'],
+  description: 'Joins from the start screen and opens a second player. Walks the Unity player (real key presses) straight at the bot and keeps pushing: it must stay apart (never on the same centre), and settle at least 0.55 m away once the keys are let go. Then the bot is put exactly on the Unity player\'s spot (a setup shortcut): the Unity player must ease apart to 0.55 m or more. Then the bot goes far away and the player walks in every direction for 30 s (d, s, a, w, then diagonals): every pose it sends must stay on the ground (y = 1) and inside the arena (the edge walls), and it must reach an edge.' }];
 // The scenarios played here rather than by net-playtest.mjs: their own run, panel and report.
-const SIDE = ['start-screen', 'smooth'];
+const SIDE = ['start-screen', 'smooth', 'crowd'];
 
 let sr = null; // the start-screen run
 const r1 = (n) => Math.round(n * 10) / 10;
@@ -422,6 +424,99 @@ async function smooth() {
   await tap('F3');
   sr.progress = 0.95;
 }
+// ---------------------------------------------------------------------------------------------------------------------
+// "crowd": capsules never share a spot (the sample eases the local one 0.6 m away from any other, so they do not z-fight)
+// and the player stays on the ground inside the edge walls (ArenaHalf 12, the capsule's centre kept within 11.5) whatever
+// keys are held. Everything is read from the poses the Unity player sends, which are its own position as it plays.
+const ARENA_LIMIT = 11.5, MIN_GAP = 0.6;
+const flat = (a, b) => Math.hypot(a[0] - b[0], a[2] - b[2]);
+async function crowd() {
+  if (!await srCheck('Connected to Hawkes Net from the start screen', async () => {
+    await joinFromStartScreen();
+    if (!online()) throw new Error('the room did not come online after pressing Join');
+    return 'online';
+  })) return;
+  sr.progress = 0.1;
+  const net = slot().net;
+  if (!await srCheck('A second player joined the same room', async () => {
+    smoothBot = await openBotPlayer();
+    await waitFor(() => (smoothBot.ready === true || smoothBot.status === 'online') && net.peers.has(smoothBot.id), 15000, 'both players to see each other');
+    await waitFor(() => sent, 5000, 'the Unity player to send its place');
+    return 'both in the room';
+  })) return;
+  // Hold the bot where it is told (a pose every 50 ms), and watch the Unity player's own poses.
+  let at = [0, 1, 0];
+  smoothTick = setInterval(() => { try { smoothBot.pose(at, 0); } catch { /* left */ } }, 50);
+  const hold = async (keys, ms, sample) => {
+    for (const k of keys) key(k, true);
+    const t0 = performance.now();
+    while (performance.now() - t0 < ms) { sample?.(sent); await sleep(50); }
+    for (const k of keys) key(k, false);
+  };
+  const at1 = (p) => { at = [p[0], 1, p[2]]; };
+  sr.progress = 0.2;
+
+  // 1. Walk straight at a player standing 3 m away to the east and keep pushing for 4 s.
+  const start = sent.slice();
+  at1([Math.min(start[0] + 3, 8), 0, start[2]]);
+  srEvent('phase', 'walk into the other player, holding D');
+  let closest = 99;
+  await sleep(300);
+  await hold(['d'], 4000, (p) => { if (p) closest = Math.min(closest, flat(p, at)); });
+  await sleep(1500);
+  const rest = flat(sent, at);
+  sr.metrics.closestWalkingM = r1(closest); sr.metrics.restingGapM = r1(rest);
+  srEvent('gap', `closest while pushing ${closest.toFixed(2)} m, at rest ${rest.toFixed(2)} m`);
+  await srCheck('Walking into another player never puts the two on one spot', async () => {
+    if (closest < 0.1) throw new Error(`the two centres came ${closest.toFixed(2)} m apart: the capsules would share a spot`);
+    return `closest ${closest.toFixed(2)} m`;
+  });
+  await srCheck(`Let go, the two stand at least ${MIN_GAP - 0.05} m apart`, async () => {
+    if (rest < MIN_GAP - 0.05) throw new Error(`they stand ${rest.toFixed(2)} m apart`);
+    return `${rest.toFixed(2)} m apart`;
+  });
+  sr.progress = 0.4;
+
+  // 2. The other player appears exactly on this one (setup shortcut: a pose on the same spot): this one eases away.
+  at1(sent);
+  srEvent('phase', 'the other player lands exactly on the Unity player');
+  await sleep(2500);
+  const apart = flat(sent, at);
+  sr.metrics.separatedGapM = r1(apart);
+  await srCheck('Two avatars put on the same spot separate into two capsules', async () => {
+    if (apart < MIN_GAP - 0.05) throw new Error(`still ${apart.toFixed(2)} m apart after 2.5 s`);
+    return `${apart.toFixed(2)} m apart after 2.5 s`;
+  });
+  sr.progress = 0.5;
+
+  // 3. Far away from the bot: 30 s of walking in every direction. Each pose must stay on the ground inside the walls.
+  at = [40, 1, 40];
+  srEvent('phase', 'walk in every direction for 30 s');
+  let worstY = 0, far = 0, bad = '', moved = 0, prev = sent.slice();
+  const dirs = [['d'], ['s'], ['a'], ['w'], ['d', 'w'], ['a', 's'], ['d', 's'], ['a', 'w'], ['d'], ['w']];
+  for (const keys of dirs) {
+    await hold(keys, 3000, (p) => {
+      if (!p) return;
+      worstY = Math.max(worstY, Math.abs(p[1] - 1));
+      far = Math.max(far, Math.abs(p[0]), Math.abs(p[2]));
+      if (!bad && (Math.abs(p[0]) > ARENA_LIMIT + 0.02 || Math.abs(p[2]) > ARENA_LIMIT + 0.02)) bad = `at ${p.map((n) => n.toFixed(2)).join(', ')} holding ${keys.join('+')}`;
+      moved += flat(p, prev); prev = p.slice();
+    });
+    sr.progress = Math.min(0.95, sr.progress + 0.04);
+  }
+  Object.assign(sr.metrics, { farthestM: r1(far), walkedM: Math.round(moved), worstHeightOffM: r1(worstY) });
+  await srCheck('Walking in any direction for 30 s keeps the avatar on the ground', async () => {
+    if (moved < 40) throw new Error(`the player only moved ${moved.toFixed(0)} m in 30 s of walking`);
+    if (worstY > 0.01) throw new Error(`it left the ground by ${worstY.toFixed(2)} m`);
+    return `walked ${moved.toFixed(0)} m, height always 1 m`;
+  });
+  await srCheck(`It stays inside the edge walls (within ${ARENA_LIMIT} m of the middle) and reaches them`, async () => {
+    if (bad) throw new Error(`it went outside the arena ${bad}`);
+    if (far < ARENA_LIMIT - 0.3) throw new Error(`it never reached an edge (farthest ${far.toFixed(1)} m)`);
+    return `farthest ${far.toFixed(2)} m from the middle`;
+  });
+}
+
 const smoothEnd = async () => {
   const S = globalThis.__hawkesNet;
   if (S) { S.watch = false; S.lag = 0; S.jitter = 0; }
@@ -439,8 +534,8 @@ api.start = async (id, options = {}) => {
   sr = { id, t0: performance.now(), done: false, lines: [], events: [], problems: [], metrics: {}, progress: 0, state: { ready: true, status: 'running', progress: 0, scene: 'Demo' } };
   const mine = sr;
   srEvent('start', id); srEvent('scene', 'Demo'); srPanel();
-  try { await (id === 'smooth' ? smooth() : startScreen()); } catch (e) { sr.problems.push({ severity: 'bug', message: `bot error: ${e?.message ?? e}` }); }
-  finally { if (id === 'smooth') await smoothEnd(); }
+  try { await (id === 'smooth' ? smooth() : id === 'crowd' ? crowd() : startScreen()); } catch (e) { sr.problems.push({ severity: 'bug', message: `bot error: ${e?.message ?? e}` }); }
+  finally { if (id === 'smooth' || id === 'crowd') await smoothEnd(); }
   if (mine !== sr) return;
   mine.done = true; mine.seconds = srNow();
   mine.state.status = mine.lines.length && mine.lines.every((l) => l.ok) ? 'won' : 'lost';

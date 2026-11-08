@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.2 (2026-11-08)
+
+- **Avatars sample: capsules never share a spot.** Within `MinGap` (0.6 m) of another player the local capsule is eased
+  away (`SeparateSpeed`), local only, so it syncs through the pose and the two never z-fight. The ground clamp and edge
+  walls were already in place (the player stays at 1 m inside `ArenaHalf`); the playtest's new `crowd` scenario checks both.
+
 ## 0.9.1 (2026-11-07)
 
 - **Prediction is capped at 250 ms.** `HawkesNetTrack.Ahead` used to keep counting past `MaxAhead` while the avatar was
