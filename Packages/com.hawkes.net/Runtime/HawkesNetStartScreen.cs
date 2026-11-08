@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Hawkes
@@ -12,6 +13,10 @@ namespace Hawkes
     ///
     /// First run: with no Project (and no ticketUrl) set it says what to do instead of failing: make a free project at
     /// net.hawkesgen.ai, put its id in Project, list your site there.
+    ///
+    /// On a phone (a touch device) the panel scales to fit a portrait screen, its rows and buttons are bigger, and a tap on
+    /// the name or the room opens the page's own text box (HawkesNet.AskText) so the phone keyboard comes up; Join, Cancel,
+    /// Try again and Leave answer touches. A mouse and keyboard player sees the same form as before.
     ///
     /// Use: set Avatars (HawkesNetAvatars with JoinOnEnable off) or call Attach(lobby, area) with your own HawkesNetLobby,
     /// and keep your game from reading the keys while Blocking is true (the player is typing a name). The status line is
@@ -56,6 +61,14 @@ namespace Hawkes
         int joinedFrame = -1;
         GUIStyle title, label, field, button, line, small;
         Texture2D white;
+        bool touchy;        // a phone: bigger rows, the page's text box for typing
+        int askFor;         // the text box open for: 0 none, 1 name, 2 room
+        float lastTapAt = -10f;
+        float guiScale = 1f;
+        struct Zone { public string Id; public Rect R; public Action Do; }
+        // Where this frame's buttons are (screen px, y down), so a finger's tap lands even when the player's page gives IMGUI no
+        // mouse events for touches. A button reached by both is only pressed once (Click).
+        readonly List<Zone> zones = new List<Zone>();
 
         /// <summary>Use your own lobby (and its Options) instead of an Avatars component.</summary>
         public void Attach(HawkesNetLobby own, string area)
@@ -74,6 +87,7 @@ namespace Hawkes
             if (PlayerName.Length == 0) PlayerName = "Player " + UnityEngine.Random.Range(100, 999);
             defaultName = PlayerName;
             RoomField = Area;
+            touchy = HawkesNet.IsTouchDevice();
         }
 
         void Start()
@@ -90,16 +104,18 @@ namespace Hawkes
                 hooked = l;
                 l.StatusChanged += _ => OnStatus();
             }
+            PollAsk();
+            ReadTaps();
             if (entered) return;
 
             // A link (or a test) can skip the form: ?autojoin=1 joins at once with the name and room in the fields. A
-            // playtest run (?playtest=<scenario>, Hawkes Studio's bot) does the same, except "start-screen", which plays
+            // playtest run (?playtest=<scenario>, Hawkes Studio's bot) does the same, except "start-screen" and "phone", which play
             // the form itself.
             if (!autoTried && (l.Status == "off" || l.Status == ""))
             {
                 autoTried = true;
                 string auto = HawkesNetLobby.Query("autojoin"), pt = HawkesNetLobby.Query("playtest");
-                if ((auto.Length > 0 && auto != "0" && auto != "false") || (pt.Length > 0 && pt != "start-screen")) { Debug.Log("[HawkesNetStart] joining without the form (?autojoin / ?playtest)"); Join(); return; }
+                if ((auto.Length > 0 && auto != "0" && auto != "false") || (pt.Length > 0 && pt != "start-screen" && pt != "phone")) { Debug.Log("[HawkesNetStart] joining without the form (?autojoin / ?playtest)"); Join(); return; }
             }
 
             // Enter joins even when the name field swallows the key event in OnGUI (a key press sent by a script, as a
@@ -107,10 +123,64 @@ namespace Hawkes
 #if ENABLE_LEGACY_INPUT_MANAGER
             try
             {
-                if (l.Status != "connecting" && l.Status != "reconnecting" && (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))) Join();
+                if (askFor == 0 && l.Status != "connecting" && l.Status != "reconnecting" && (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))) Join();
             }
             catch (InvalidOperationException) { /* the Input System package only: the button and OnGUI's Enter remain */ }
 #endif
+        }
+
+        // ------------------------------------------------------------------ touch
+
+        // A finger lifted on a button drawn last frame: press it.
+        void ReadTaps()
+        {
+#if ENABLE_LEGACY_INPUT_MANAGER
+            try
+            {
+                for (int i = 0; i < Input.touchCount; i++)
+                {
+                    var t = Input.GetTouch(i);
+                    if (t.phase != TouchPhase.Ended) continue;
+                    var at = new Vector2(t.position.x, Screen.height - t.position.y);
+                    for (int z = 0; z < zones.Count; z++)
+                        if (zones[z].R.Contains(at)) { lastTapAt = Time.unscaledTime; zones[z].Do(); break; }
+                }
+            }
+            catch (InvalidOperationException) { /* the Input System package only */ }
+#endif
+        }
+
+        // A button: drawn and pressed by the mouse (or an IMGUI touch), and registered for ReadTaps. Within a moment of a tap
+        // ReadTaps already took, the IMGUI press is the same touch again and is ignored.
+        bool Click(Rect r, string id, string text, GUIStyle style, Action tap)
+        {
+            if (Event.current.type == EventType.Repaint && tap != null)
+                zones.Add(new Zone { Id = id, R = new Rect(r.x * guiScale, r.y * guiScale, r.width * guiScale, r.height * guiScale), Do = tap });
+            bool pressed = GUI.Button(r, text, style);
+            return pressed && Time.unscaledTime - lastTapAt > 0.4f;
+        }
+
+        void OpenAsk(int which)
+        {
+            if (askFor != 0) return;
+            askFor = which;
+            if (which == 1) HawkesNet.AskText("Your name", PlayerName, MaxName, "Shown above your avatar.");
+            else HawkesNet.AskText("Room", RoomField, MaxRoom, "Letters, numbers, - and _. The same room, the same players.");
+        }
+
+        // The page's text box ended: OK keeps what was typed, Cancel (or a tap outside) leaves the field as it was.
+        void PollAsk()
+        {
+            if (askFor == 0) return;
+            int state = HawkesNet.AskTextState();
+            if (state == 1) return;
+            string text = HawkesNet.AskTextValue();
+            if (state == 2)
+            {
+                if (askFor == 1) PlayerName = CleanName(text);
+                else RoomField = text.Trim();
+            }
+            askFor = 0;
         }
 
         void OnStatus()
@@ -261,18 +331,49 @@ namespace Hawkes
             MakeStyles();
             var l = Lobby;
             float s = Mathf.Max(1f, Screen.height / 700f);
+            // A phone held upright is narrower than the 400 wide panel: scale to the width then.
+            s = Mathf.Min(s, Screen.width / 440f);
+            guiScale = s;
+            if (Event.current.type == EventType.Repaint) zones.Clear();
             var old = GUI.matrix;
             GUI.matrix = Matrix4x4.Scale(new Vector3(s, s, 1f));
             float w = Screen.width / s, h = Screen.height / s;
             if (!entered) Panel(l, w, h); else if (ShowHud) Hud(l, w);
             GUI.matrix = old;
+            if (Event.current.type == EventType.Repaint) ReportForm();
         }
+
+        string lastForm = "";
+
+        // Tells a tool in the page (Hawkes Studio's phone playtest) where this frame's buttons are, as fractions of the canvas
+        // (x from the left, y from the top): window.__hawkesNet.touch.form = { name: {x, y, w, h}, join: ..., ... }.
+        void ReportForm()
+        {
+            if (!HawkesNet.Live) return;
+            var sb = new System.Text.StringBuilder(160);
+            sb.Append("{\"form\":{");
+            for (int i = 0; i < zones.Count; i++)
+            {
+                var z = zones[i].R;
+                if (i > 0) sb.Append(',');
+                sb.Append('"').Append(zones[i].Id).Append("\":{\"x\":").Append(Frac(z.x / Screen.width)).Append(",\"y\":").Append(Frac(z.y / Screen.height))
+                  .Append(",\"w\":").Append(Frac(z.width / Screen.width)).Append(",\"h\":").Append(Frac(z.height / Screen.height)).Append('}');
+            }
+            sb.Append("}}");
+            string json = sb.ToString();
+            if (json == lastForm) return;
+            lastForm = json;
+            HawkesNet.ShowedTouch(json);
+        }
+
+        static string Frac(float v) => v.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
 
         void Panel(HawkesNetLobby l, float w, float h)
         {
             bool setup = l != null && SetupMissing(l);
             bool failed = l != null && (l.Status == "offline" || l.Status == "full");
-            float pw = 400f, ph = (setup ? 430f : (failed ? 340f : 310f)) + 20f;
+            float pw = 400f, ph = (setup ? 430f : (failed ? 340f : 310f)) + 20f + (touchy ? 44f : 0f);
+            float rh = touchy ? 40f : 28f, bh = touchy ? 44f : 36f; // a row of the form, the Join button
             var r = new Rect((w - pw) * 0.5f, Mathf.Max(10f, (h - ph) * 0.4f), pw, ph);
             Box(new Rect(r.x - 2, r.y - 2, r.width + 4, r.height + 4), new Color(1f, 1f, 1f, 0.12f));
             Box(r, new Color(0.06f, 0.07f, 0.1f, 0.94f));
@@ -288,16 +389,33 @@ namespace Hawkes
 
             if (!focused && Event.current.type == EventType.Repaint) { GUI.FocusControl("hn-name"); focused = true; }
             bool busy = l != null && (l.Status == "connecting" || l.Status == "reconnecting");
-            bool editable = !busy;
+            bool editable = !busy && askFor == 0;
             GUI.enabled = editable;
-            GUI.Label(new Rect(x, y, 70f, 28f), "Name", label);
-            GUI.SetNextControlName("hn-name");
-            PlayerName = GUI.TextField(new Rect(x + 70f, y, iw - 70f, 28f), PlayerName, MaxName, field); y += 36f;
+            bool ask = touchy && HawkesNet.CanAskText;
+            GUI.Label(new Rect(x, y, 70f, rh), "Name", label);
+            if (ask)
+            {
+                if (Click(new Rect(x + 70f, y, iw - 70f, rh), "name", PlayerName, field, editable ? (Action)(() => OpenAsk(1)) : null)) OpenAsk(1);
+            }
+            else
+            {
+                GUI.SetNextControlName("hn-name");
+                PlayerName = GUI.TextField(new Rect(x + 70f, y, iw - 70f, rh), PlayerName, MaxName, field);
+            }
+            y += rh + 8f;
             if (AllowRoomEntry)
             {
-                GUI.Label(new Rect(x, y, 70f, 28f), "Room", label);
-                GUI.SetNextControlName("hn-room");
-                RoomField = GUI.TextField(new Rect(x + 70f, y, iw - 70f, 28f), RoomField, MaxRoom, field); y += 36f;
+                GUI.Label(new Rect(x, y, 70f, rh), "Room", label);
+                if (ask)
+                {
+                    if (Click(new Rect(x + 70f, y, iw - 70f, rh), "room", RoomField, field, editable ? (Action)(() => OpenAsk(2)) : null)) OpenAsk(2);
+                }
+                else
+                {
+                    GUI.SetNextControlName("hn-room");
+                    RoomField = GUI.TextField(new Rect(x + 70f, y, iw - 70f, rh), RoomField, MaxRoom, field);
+                }
+                y += rh + 8f;
             }
             GUI.enabled = true;
 
@@ -306,14 +424,14 @@ namespace Hawkes
             bool enter = e.type == EventType.KeyDown && (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter);
             if (busy)
             {
-                if (GUI.Button(new Rect(x, y, iw, 36f), "Cancel", button)) Leave();
+                if (Click(new Rect(x, y, iw, bh), "cancel", "Cancel", button, Leave)) Leave();
             }
             else
             {
                 string verb = failed ? "Try again" : "Join";
-                if (GUI.Button(new Rect(x, y, iw, 36f), verb, button) || enter) { if (enter) e.Use(); Join(); }
+                if (Click(new Rect(x, y, iw, bh), "join", verb, button, askFor == 0 ? (Action)(() => Join()) : null) || enter) { if (enter) e.Use(); Join(); }
             }
-            y += 46f;
+            y += bh + 10f;
 
             string status = (l != null && l.Status != "off") ? Describe(l) : "Pick a name and press Join.";
             string st = l != null ? l.Status : "off";
@@ -335,7 +453,8 @@ namespace Hawkes
         {
             string st = l != null ? l.Status : "off";
             string text = "Hawkes Net: " + Describe(l);
-            var r = new Rect(10f, 10f, Mathf.Min(560f, w - 150f), 28f);
+            float hh = touchy ? 36f : 28f;
+            var r = new Rect(10f, 10f, Mathf.Min(560f, w - 150f), hh);
             Box(r, new Color(0f, 0f, 0f, 0.55f));
             Box(new Rect(r.x + 6f, r.y + 9f, 10f, 10f), StatusColor(st));
             var oldc = label.normal.textColor;
@@ -343,10 +462,14 @@ namespace Hawkes
             GUI.Label(new Rect(r.x + 24f, r.y, r.width - 28f, r.height), text, label);
             label.normal.textColor = oldc;
             if (st == "offline" || st == "full")
-                if (GUI.Button(new Rect(r.xMax + 8f, r.y, 96f, 28f), "Try again")) l.RetryNow();
+            {
+                // Beside the bar when there is room, else under it (a phone held upright).
+                var again = w < 620f ? new Rect(10f, r.yMax + 6f, 110f, hh) : new Rect(r.xMax + 8f, r.y, 96f, hh);
+                if (Click(again, "again", "Try again", GUI.skin.button, l.RetryNow)) l.RetryNow();
+            }
             var e = Event.current;
             bool esc = e.type == EventType.KeyDown && e.keyCode == KeyCode.Escape;
-            if (GUI.Button(new Rect(w - 110f, 10f, 100f, 28f), "Leave (Esc)") || esc) { if (esc) e.Use(); Leave(); }
+            if (Click(new Rect(w - 110f, 10f, 100f, hh), "leave", touchy ? "Leave" : "Leave (Esc)", GUI.skin.button, Leave) || esc) { if (esc) e.Use(); Leave(); }
         }
     }
 }

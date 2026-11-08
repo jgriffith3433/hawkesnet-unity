@@ -1,0 +1,38 @@
+/* The demo page on a phone (HawkesNetDemoBuild copies this beside index.html and links it): the Unity canvas is the whole
+   viewport on every screen, so there is no sideways scroll, no footer to push the page past the screen, and a drag on the
+   canvas steers instead of scrolling or zooming the page. Unity sizes the canvas's drawing buffer from its on-screen size
+   times window.devicePixelRatio, so a phone's canvas is drawn at the phone's own resolution. */
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #0b0d12;
+  overscroll-behavior: none;
+}
+body {
+  position: fixed;
+  inset: 0;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+#unity-container, #unity-container.unity-desktop, #unity-container.unity-mobile {
+  position: fixed !important;
+  left: 0 !important;
+  top: 0 !important;
+  width: 100% !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  transform: none !important;
+}
+#unity-canvas, #unity-canvas.unity-mobile {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  touch-action: none;
+  outline: none;
+}
+#unity-footer { display: none !important; }

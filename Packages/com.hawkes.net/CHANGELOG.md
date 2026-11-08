@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.10.0 (2026-11-08)
+
+- **Phones.** `HawkesNetTouchControls` (new, no assets): a floating joystick on the left half of the screen and three emote
+  buttons on the right; it reads `Move` (add it to your WASD move) and `TakeEmote()`, shows on a touch device
+  (`HawkesNet.IsTouchDevice`, or `?touch=1`) and never for a mouse and keyboard player. The Avatars sample uses it (the demo
+  twin too), with bigger names and HUD text on a small screen.
+- **The Join form on a phone.** The panel scales to fit a portrait screen, its rows and buttons are bigger, and tapping the
+  name or the room opens the page's own text box (`HawkesNet.AskText`, WebGL) so the phone keyboard comes up (a canvas cannot
+  raise it). Join, Cancel, Try again and Leave answer touches. Desktop looks and works as before.
+- **For tools in the page:** `window.__hawkesNet.touch` says where the joystick, the emote buttons and the form's buttons are
+  (fractions of the canvas), what the stick reads and how many emotes were tapped (`HawkesNet.ShowedTouch`).
+- **Demo page:** `DevTools/demo-web/mobile.css` makes the canvas the whole viewport (no sideways scroll, no footer) at the
+  screen's own pixel ratio; Studio's playtest has a `phone` scenario that plays all of this with touch events.
+
 ## 0.9.3 (2026-11-08)
 
 - **Join never does nothing.** On the start screen an emptied name field made Join (button or Enter) refuse with a line
