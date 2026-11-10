@@ -331,7 +331,7 @@ api.scenarios = () => [...baseScenarios(), { id: 'phone', title: 'Phone: the can
   description: 'Joins from the start screen, opens a second player that walks a figure eight in front of the camera, and reads where Unity draws it every frame (window.__hawkesNet.watch): 6 s on the plain connection (it must move every frame, facing where it goes), then 10 s with 150 ms (+0-30 ms jitter) of simulated latency on the poses (no frame may step faster than twice its top speed or turn more than twice its top turn rate). Then it checks the HUD (plain "Latency: N ms"; the detail line only after F3), and stops the bot\'s poses for 3 s: the prediction must never pass 250 ms and the avatar must hold still.' },
 { id: 'crowd', title: 'Two avatars never share a spot, and a 30 s walk keeps the avatar on the ground inside the edge walls', seconds: 90, tags: ['full', 'avatars'],
   description: 'Joins from the start screen and opens a second player. Walks the Unity player (real key presses) straight at the bot and keeps pushing: it must stay apart (never on the same centre), and settle at least 0.55 m away once the keys are let go. Then the bot is put exactly on the Unity player\'s spot (a setup shortcut): the Unity player must ease apart to 0.55 m or more. Then the bot goes far away and the player walks in every direction for 30 s (d, s, a, w, then diagonals): every pose it sends must stay on the ground (y = 1) and inside the arena (the edge walls), and it must reach an edge.' },
-{ id: 'page', title: 'Playtest hook appears while loading, demo-root.json marks the folder, load errors show a card', seconds: 30, tags: ['smoke', 'ui'],
+{ id: 'page', title: 'Loading screen (progress, fade, phone fit), playtest hook while loading, demo-root.json, load error card', seconds: 30, tags: ['smoke', 'ui'],
   description: 'Checks the inline stub put window.hawkesPlaytest up before Unity finished (within 1 s of page start), that ./demo-root.json answers so a deeper path can relocate here, and that a load failure shows the plain error card (via the page helper, same card ?failLoad=1 uses).' }];
 // The scenarios played here rather than by net-playtest.mjs: their own run, panel and report.
 const SIDE = ['start-screen', 'smooth', 'crowd', 'phone', 'page'];
@@ -718,6 +718,28 @@ async function page() {
     sr.metrics.stubAtMs = Math.round(at);
     srEvent('hook-early', `${Math.round(at)} ms`);
     return `stub at ${Math.round(at)} ms`;
+  });
+  await srCheck('The branded loading screen filled its bar with real loader progress and faded out', async () => {
+    const ls = globalThis.__hawkesLoading;
+    const bar = document.getElementById('unity-loading-bar');
+    if (!ls || !bar) throw new Error('the template has no loading screen');
+    if (!/Hawkes\s*Net/.test(bar.textContent) || !/second tab/.test(bar.textContent)) throw new Error('loading screen lacks the title or the tip');
+    if (ls.samples.length < 2 || ls.samples[ls.samples.length - 1] !== 1) throw new Error(`progress samples ${JSON.stringify(ls.samples)}`);
+    if (ls.samples.some((v, i) => i && v < ls.samples[i - 1])) throw new Error('progress went backwards');
+    if (ls.fadedAt === null) throw new Error('the loading screen never faded');
+    srEvent('loading', `${ls.samples.length} progress steps, faded`);
+    return `${ls.samples.length} progress steps, faded into the Join screen`;
+  });
+  await srCheck('Loading screen fits the viewport (no scroll, nothing cut off)', async () => {
+    const de = document.documentElement;
+    if (de.scrollWidth > innerWidth + 1 || de.scrollHeight > innerHeight + 1) throw new Error(`page ${de.scrollWidth}x${de.scrollHeight} exceeds ${innerWidth}x${innerHeight}`);
+    const bar = document.getElementById('unity-loading-bar');
+    const prev = [bar.hidden, bar.className];
+    bar.hidden = false; bar.className = '';
+    const bad = [...bar.children].filter((c) => { const r = c.getBoundingClientRect(); return r.left < 0 || r.right > innerWidth || r.top < 0 || r.bottom > innerHeight; });
+    bar.hidden = prev[0]; bar.className = prev[1];
+    if (bad.length) throw new Error(`${bad.length} loading element(s) outside ${innerWidth}x${innerHeight}`);
+    return `fits ${innerWidth}x${innerHeight}`;
   });
   sr.progress = 0.35;
   await srCheck('demo-root.json answers next to index.html (deeper paths can relocate here)', async () => {
