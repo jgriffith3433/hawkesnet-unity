@@ -33,7 +33,13 @@ pull requests into `beta` (they merge themselves once CI passes); `main` moves o
 
 ## Studio's playtest of the demo
 
-The demo build carries Hawkes Studio's playtest bot: `HawkesNetDemoBuild` copies `DevTools/demo-web/` (outside Assets, so
+The demo WebGL page is `Assets/WebGLTemplates/HawkesNetDemo` (`PlayerSettings.WebGL.template = PROJECT:HawkesNetDemo` in
+`HawkesNetDemoBuild`): an inline `window.hawkesPlaytest` stub (status `loading` + loader progress) before the Unity
+loader, relative `Build/` paths, `demo-root.json` next to `index.html` (so a deeper beta URL can `location.replace` back
+to the demo and keep the query string), and a plain error card when the build cannot load. `unity-playtest.mjs` upgrades
+the stub when the sample is ready. Scenario `page` checks the hook, the marker and the error card.
+
+The demo build also carries Hawkes Studio's playtest bot: `HawkesNetDemoBuild` copies `DevTools/demo-web/` (outside Assets, so
 Unity ignores it) beside the WebGL `index.html` and adds `unity-playtest.mjs` to it. The bot (`window.hawkesPlaytest`)
 finds the Unity player's room in the page (`window.__hawkesNet`, HawkesNet.jslib), opens a second player there, walks the
 capsule with real key presses and checks poses and messages both ways through the bridge (`smoke`), or meets real
