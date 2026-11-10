@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.0 (2026-11-10)
+
+- **Avatars sample: tinted RobotExpressive humanoid.** Replaces the capsule with Tomás Laulhé / three.js's CC0
+  RobotExpressive (`.glb` via `com.unity.cloud.gltfast`). `HawkesNetAvatarBake` (also run from the demo WebGL build)
+  writes `Resources/HawkesNetAvatar` with a Generic Animator controller: 1D idle/walk/run blend thresholds from each
+  clip's root speed, playback scaled to ground speed, wave / hop / spin emotes with exits back to locomotion. Tint uses
+  a `MaterialPropertyBlock`; soft push-apart still uses each avatar's `CapsuleCollider`; feet sit at y=0.
+- **Credit** in the sample README. Package depends on `com.unity.cloud.gltfast` 6.20.0.
+
 ## 0.10.0 (2026-11-08)
 
 - **Phones.** `HawkesNetTouchControls` (new, no assets): a floating joystick on the left half of the screen and three emote

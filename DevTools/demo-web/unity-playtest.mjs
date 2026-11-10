@@ -24,6 +24,18 @@ let sentYaw = 0; // which way the Unity player faces (radians, Unity's yaw: 0 is
 let sentExtra = null; // the extra values (colour, emote) the Unity player sent with its newest pose
 // The second player's look, sent with every pose it makes: an orange capsule, no emote yet (the sample's Style).
 const botStyle = { c: '#ff9d2e', e: 0, n: 0 };
+// Avatar body y: humanoid feet at y=0 (was capsule centre at y=1).
+const AVATAR_Y = 0;
+// Console lines from HawkesNetAvatarVisual ("[HawkesNetAvatar] humanoid ready" / "capsule stand-in").
+const avatarLog = [];
+for (const m of ['log', 'info', 'warn', 'error']) {
+  const orig = console[m].bind(console);
+  console[m] = (...a) => {
+    try { const t = a.map(String).join(' '); const i = t.indexOf('[HawkesNetAvatar] '); if (i >= 0) avatarLog.push(t.slice(i + 18).split('\n')[0].trim()); } catch { /* never in the way */ }
+    return orig(...a);
+  };
+}
+const avatarKind = () => avatarLog.find((t) => t.startsWith('humanoid') || t.startsWith('capsule')) || '';
 const main = () => {
   const s = slot();
   const net = s?.net ?? null;
@@ -89,7 +101,7 @@ async function avatarChecks({ check, main, bot, until, wait, metric }) {
     // different on screen (e.g. #F26455 vs #ff9d2e, hue gap ~0.073). Resolve like the sample when we sort last.
     if (hueGap(seenByBot.c, botStyle.c) < 0.08 && bot.id > main.id) {
       botStyle.c = farColour(seenByBot.c);
-      bot.pose([3, 1, 3], 0);
+      bot.pose([3, AVATAR_Y, 3], 0);
     }
     await until(() => hueGap(seenByBot.c, botStyle.c) >= 0.08, 5000, () => `the two colours to differ (Unity ${seenByBot.c}, bot ${botStyle.c})`);
     await until(() => shown()?.c === botStyle.c, 5000, 'the Unity page to receive the bot colour');
@@ -108,7 +120,7 @@ async function avatarChecks({ check, main, bot, until, wait, metric }) {
       await wait(1100);
       // Bot: plays the same emote; the Unity page receives it and draws it on the bot's capsule.
       botStyle.e = k; botStyle.n += 1; const n = botStyle.n;
-      bot.pose([3, 1, 3], 0);
+      bot.pose([3, AVATAR_Y, 3], 0);
       await until(() => shown()?.e === k && shown()?.n === n, 5000, () => `the Unity page to receive the bot's emote ${k} (it has ${JSON.stringify(shown())})`);
       await wait(1100); // long enough for the animation and its caption to show on the video
       return EMOTES[k];
@@ -146,7 +158,7 @@ const api = installNetPlaytest({
   myPos: () => sent ?? [0, 0, 0],
   // What the bridge hands the Unity side for that player (HawkesNetAvatars places its capsule from it each frame).
   shownPos: (id) => slot()?.poses?.[id]?.p ?? null,
-  botPose: (u) => [-3 + 6 * u, 1, 3],
+  botPose: (u) => [-3 + 6 * u, AVATAR_Y, 3],
   tolerance: 0.3,
 });
 
@@ -330,7 +342,7 @@ async function phone() {
   await waitFor(() => (bot.ready === true || bot.status === 'online') && net.peers.has(bot.id), 15000, 'the second player to join the room');
   const seen = {};
   bot.onPose((id, st) => { if (id === net.id) { seen.e = st?.e; seen.n = st?.n; } });
-  bot.pose([3, 1, 3], 0);
+  bot.pose([3, AVATAR_Y, 3], 0);
   await sleep(600);
   await srCheck('An emote tapped on the phone shows on the other player\'s screen', async () => {
     const out = [];
@@ -358,11 +370,13 @@ api.scenarios = () => [...baseScenarios(), { id: 'phone', title: 'Phone: join by
 { id: 'smooth', title: 'Smooth remote avatar: moves every frame, no snapping at 150 ms latency, prediction capped at 250 ms then holds, Latency HUD and F3 debug line', seconds: 75, tags: ['full', 'netcode'],
   description: 'Joins from the start screen, opens a second player that walks a figure eight in front of the camera, and reads where Unity draws it every frame (window.__hawkesNet.watch): 6 s on the plain connection (it must move every frame, facing where it goes), then 10 s with 150 ms (+0-30 ms jitter) of simulated latency on the poses (no frame may step faster than twice its top speed or turn more than twice its top turn rate). Then it checks the HUD (plain "Latency: N ms"; the detail line only after F3), and stops the bot\'s poses for 3 s: the prediction must never pass 250 ms and the avatar must hold still.' },
 { id: 'crowd', title: 'Two avatars never share a spot, and a 30 s walk keeps the avatar on the ground inside the edge walls', seconds: 90, tags: ['full', 'avatars'],
-  description: 'Joins from the start screen and opens a second player. Walks the Unity player (real key presses) straight at the bot and keeps pushing: it must stay apart (never on the same centre), and settle at least 0.55 m away once the keys are let go. Then the bot is put exactly on the Unity player\'s spot (a setup shortcut): the Unity player must ease apart to 0.55 m or more. Then the bot goes far away and the player walks in every direction for 30 s (d, s, a, w, then diagonals): every pose it sends must stay on the ground (y = 1) and inside the arena (the edge walls), and it must reach an edge.' },
+  description: 'Joins from the start screen and opens a second player. Walks the Unity player (real key presses) straight at the bot and keeps pushing: it must stay apart (never on the same centre), and settle at least 0.55 m away once the keys are let go. Then the bot is put exactly on the Unity player\'s spot (a setup shortcut): the Unity player must ease apart to 0.55 m or more. Then the bot goes far away and the player walks in every direction for 30 s (d, s, a, w, then diagonals): every pose it sends must stay on the ground (y = 0, humanoid feet) and inside the arena (the edge walls), and it must reach an edge.' },
+{ id: 'humanoid', title: 'Tinted animated humanoid on the ground: idle, walk, run, soft push-apart', seconds: 75, tags: ['full', 'avatars'],
+  description: 'Joins from the start screen, checks the baked RobotExpressive humanoid loaded (console "[HawkesNetAvatar] humanoid ready"), feet on the ground (pose y ≈ 0), walks then runs with real keys (ground speed rises), opens a second player and walks into it so soft push-apart keeps them ≥0.55 m apart. Scenes Humanoid-Idle / Humanoid-Walk / Humanoid-Push for footage of the tinted figure.' },
 { id: 'page', title: 'Loading screen (progress, fade, phone fit), playtest hook while loading, demo-root.json, load error card', seconds: 30, tags: ['smoke', 'ui'],
   description: 'Checks the inline stub put window.hawkesPlaytest up before Unity finished (within 1 s of page start), that ./demo-root.json answers so a deeper path can relocate here, and that a load failure shows the plain error card (via the page helper, same card ?failLoad=1 uses).' }];
 // The scenarios played here rather than by net-playtest.mjs: their own run, panel and report.
-const SIDE = ['start-screen', 'smooth', 'crowd', 'phone', 'page'];
+const SIDE = ['start-screen', 'smooth', 'crowd', 'phone', 'page', 'humanoid'];
 
 let sr = null; // the start-screen run
 const r1 = (n) => Math.round(n * 10) / 10;
@@ -654,7 +668,7 @@ async function crowd() {
     return 'both in the room';
   })) return;
   // Hold the bot where it is told (a pose every 50 ms), and watch the Unity player's own poses.
-  let at = [0, 1, 0];
+  let at = [0, AVATAR_Y, 0];
   smoothTick = setInterval(() => { try { smoothBot.pose(at, 0); } catch { /* left */ } }, 50);
   const hold = async (keys, ms, sample) => {
     for (const k of keys) key(k, true);
@@ -662,7 +676,7 @@ async function crowd() {
     while (performance.now() - t0 < ms) { sample?.(sent); await sleep(50); }
     for (const k of keys) key(k, false);
   };
-  const at1 = (p) => { at = [p[0], 1, p[2]]; };
+  const at1 = (p) => { at = [p[0], AVATAR_Y, p[2]]; };
   sr.progress = 0.2;
 
   // 1. Walk straight at a player standing 3 m away to the east and keep pushing for 4 s.
@@ -699,14 +713,14 @@ async function crowd() {
   sr.progress = 0.5;
 
   // 3. Far away from the bot: 30 s of walking in every direction. Each pose must stay on the ground inside the walls.
-  at = [start[0] > 0 ? -8 : 8, 1, 8]; // inside the walls and in frame: a capsule out beyond them reads as a stray object
+  at = [start[0] > 0 ? -8 : 8, AVATAR_Y, 8]; // inside the walls and in frame
   srEvent('phase', 'walk in every direction for 30 s');
   let worstY = 0, far = 0, bad = '', moved = 0, prev = sent.slice();
   const dirs = [['d'], ['s'], ['a'], ['w'], ['d', 'w'], ['a', 's'], ['d', 's'], ['a', 'w'], ['d'], ['w']];
   for (const keys of dirs) {
     await hold(keys, 3000, (p) => {
       if (!p) return;
-      worstY = Math.max(worstY, Math.abs(p[1] - 1));
+      worstY = Math.max(worstY, Math.abs(p[1] - AVATAR_Y));
       far = Math.max(far, Math.abs(p[0]), Math.abs(p[2]));
       if (!bad && (Math.abs(p[0]) > ARENA_LIMIT + 0.02 || Math.abs(p[2]) > ARENA_LIMIT + 0.02)) bad = `at ${p.map((n) => n.toFixed(2)).join(', ')} holding ${keys.join('+')}`;
       moved += flat(p, prev); prev = p.slice();
@@ -717,7 +731,7 @@ async function crowd() {
   await srCheck('Walking in any direction for 30 s keeps the avatar on the ground', async () => {
     if (moved < 40) throw new Error(`the player only moved ${moved.toFixed(0)} m in 30 s of walking`);
     if (worstY > 0.01) throw new Error(`it left the ground by ${worstY.toFixed(2)} m`);
-    return `walked ${moved.toFixed(0)} m, height always 1 m`;
+    return `walked ${moved.toFixed(0)} m, height always ${AVATAR_Y} m (feet on the ground)`;
   });
   await srCheck(`It stays inside the edge walls (within ${ARENA_LIMIT} m of the middle) and reaches them`, async () => {
     if (bad) throw new Error(`it went outside the arena ${bad}`);
@@ -732,6 +746,86 @@ const smoothEnd = async () => {
   if (smoothTick) { clearInterval(smoothTick); smoothTick = null; }
   if (smoothBot) { const b = smoothBot; smoothBot = null; try { await b.leave(); } catch { /* gone */ } }
 };
+
+// ---------------------------------------------------------------------------------------------------------------------
+// "humanoid": tinted RobotExpressive on the ground, locomotion speeds, soft push-apart (acceptance for the avatar swap).
+async function humanoid() {
+  sr.state.scene = 'Humanoid-Idle';
+  srEvent('scene', 'Humanoid-Idle');
+  if (!await srCheck('Connected to Hawkes Net from the start screen', async () => {
+    await joinFromStartScreen();
+    if (!online()) throw new Error('the room did not come online after pressing Join');
+    return 'online';
+  })) return;
+  sr.progress = 0.15;
+
+  await srCheck('Each player uses the baked tinted humanoid (not the capsule stand-in)', async () => {
+    await waitFor(() => avatarKind().startsWith('humanoid') || avatarKind().startsWith('capsule') || sent, 15000, 'the avatar log or a pose');
+    const kind = avatarKind();
+    if (!kind.startsWith('humanoid')) throw new Error(`expected "[HawkesNetAvatar] humanoid ready", got "${kind || 'nothing'}" (bake Resources/HawkesNetAvatar before the WebGL build)`);
+    sr.metrics.avatarKind = kind;
+    srEvent('avatar', kind);
+    return kind;
+  });
+  sr.progress = 0.3;
+
+  await waitFor(() => sent, 5000, 'the Unity player to send its place');
+  await srCheck('Characters stand on the ground (pose y ≈ 0, no floating capsule centre)', async () => {
+    const y = sent[1];
+    sr.metrics.groundY = r1(y);
+    if (Math.abs(y - AVATAR_Y) > 0.05) throw new Error(`pose y is ${y}, expected ~${AVATAR_Y} (feet on the ground)`);
+    srEvent('ground', `y=${y}`);
+    return `y=${y}`;
+  });
+  sr.progress = 0.4;
+
+  sr.state.scene = 'Humanoid-Walk';
+  srEvent('scene', 'Humanoid-Walk');
+  // Idle (no keys): almost no travel. Then hold D (digital keys → full Speed ≈ 5 m/s): Animator blends toward run
+  // and covers ground at that rate. (Analog stick can walk slower; keyboard is the playtest's real input.)
+  const idle0 = sent.slice(); await sleep(800); const idle1 = sent.slice();
+  const idleSpeed = flat(idle0, idle1) / 0.8;
+  const m0 = sent.slice();
+  key('d', true); await sleep(1500); key('d', false); await sleep(200);
+  const m1 = sent.slice();
+  const moveSpeed = flat(m0, m1) / 1.5;
+  sr.metrics.idleSpeedMps = r1(idleSpeed); sr.metrics.moveSpeedMps = r1(moveSpeed);
+  srEvent('speed', `idle~${idleSpeed.toFixed(2)} m/s, move~${moveSpeed.toFixed(2)} m/s`);
+  await srCheck('Idle stays put and walking/running matches ground speed', async () => {
+    if (idleSpeed > 0.15) throw new Error(`idle drifted at ${idleSpeed.toFixed(2)} m/s`);
+    if (moveSpeed < 2.5) throw new Error(`held move only ${moveSpeed.toFixed(2)} m/s (Speed field is 5)`);
+    return `idle~${idleSpeed.toFixed(2)} m/s, move~${moveSpeed.toFixed(1)} m/s`;
+  });
+  sr.progress = 0.65;
+
+  sr.state.scene = 'Humanoid-Push';
+  srEvent('scene', 'Humanoid-Push');
+  const net = slot().net;
+  if (!await srCheck('A second player joined the same room', async () => {
+    smoothBot = await openBotPlayer();
+    await waitFor(() => (smoothBot.ready === true || smoothBot.status === 'online') && net.peers.has(smoothBot.id), 15000, 'both players to see each other');
+    return 'both in the room';
+  })) return;
+
+  let at = [sent[0] + 3, AVATAR_Y, sent[2]];
+  smoothTick = setInterval(() => { try { smoothBot.pose(at, 0); } catch { /* left */ } }, 50);
+  await sleep(300);
+  let closest = 99;
+  key('d', true);
+  const t0 = performance.now();
+  while (performance.now() - t0 < 4000) { if (sent) closest = Math.min(closest, flat(sent, at)); await sleep(50); }
+  key('d', false);
+  await sleep(1500);
+  const rest = flat(sent, at);
+  sr.metrics.closestWalkingM = r1(closest); sr.metrics.restingGapM = r1(rest);
+  srEvent('gap', `closest ${closest.toFixed(2)} m, rest ${rest.toFixed(2)} m`);
+  await srCheck('Two characters walking into each other still push apart', async () => {
+    if (closest < 0.1) throw new Error(`centres came ${closest.toFixed(2)} m apart`);
+    if (rest < MIN_GAP - 0.05) throw new Error(`they rest ${rest.toFixed(2)} m apart`);
+    return `closest ${closest.toFixed(2)} m, rest ${rest.toFixed(2)} m`;
+  });
+  sr.progress = 1;
+}
 
 // "page": the WebGL template's early hook, demo-root.json marker, and plain error card (no Join / no second player).
 async function page() {
@@ -815,9 +909,9 @@ api.start = async (id, options = {}) => {
   const mine = sr;
   srEvent('start', id); srEvent('scene', 'Demo'); srPanel();
   try {
-    await (id === 'smooth' ? smooth() : id === 'crowd' ? crowd() : id === 'phone' ? phone() : id === 'page' ? page() : startScreen());
+    await (id === 'smooth' ? smooth() : id === 'crowd' ? crowd() : id === 'humanoid' ? humanoid() : id === 'phone' ? phone() : id === 'page' ? page() : startScreen());
   } catch (e) { sr.problems.push({ severity: 'bug', message: `bot error: ${e?.message ?? e}` }); }
-  finally { if (id === 'smooth' || id === 'crowd' || id === 'phone') await smoothEnd(); }
+  finally { if (id === 'smooth' || id === 'crowd' || id === 'humanoid' || id === 'phone') await smoothEnd(); }
   if (mine !== sr) return;
   mine.done = true; mine.seconds = srNow();
   mine.state.status = mine.lines.length && mine.lines.every((l) => l.ok) ? 'won' : 'lost';
