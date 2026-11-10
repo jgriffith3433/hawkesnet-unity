@@ -244,6 +244,17 @@ mergeInto(LibraryManager.library, {
     } catch (e) {}
   },
 
+  // Scene quality audit (HawkesNet.ShowedScene): floating/sunk props, z-fight pairs, inside-out meshes, camera-inside
+  // frames during a scripted orbit, near clip. window.__hawkesNet.scene is the newest report for the smoke playtest.
+  HawkesNet_Scene: function (jsonPtr) {
+    var S = window.__hawkesNet = window.__hawkesNet || { rooms: {} };
+    try {
+      var a = JSON.parse(UTF8ToString(jsonPtr));
+      a.t = performance.now();
+      S.scene = a;
+    } catch (e) {}
+  },
+
   // Phones and tablets: 1 when the page's main pointer is a finger (or the page has touch points and a mobile browser).
   HawkesNet_IsTouch: function () {
     try {

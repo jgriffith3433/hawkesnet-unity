@@ -93,6 +93,7 @@ namespace Hawkes.Samples
             ground.GetComponent<Renderer>().sharedMaterial = MakeMaterial(new Color(0.35f, 0.55f, 0.35f));
 
             // A low ramp and a step near the walls (away from the usual spawn) so Jump → Land is exercised on slopes.
+            // Centres are half-height so bounds sit on the ground (±2 cm); tilted props are snapped after create.
             AddProp("Ramp", new Vector3(8f, 0.35f, -6f), new Vector3(4f, 0.7f, 2.5f), Quaternion.Euler(0f, 0f, -12f), new Color(0.45f, 0.5f, 0.4f));
             AddProp("Step", new Vector3(-8f, 0.25f, 6f), new Vector3(2.5f, 0.5f, 2.5f), Quaternion.identity, new Color(0.5f, 0.48f, 0.42f));
             // Code-built dressing (no GPU): corner posts and benches so a short walk always hits something to look at.
@@ -102,9 +103,10 @@ namespace Hawkes.Samples
             AddProp("Post NW", new Vector3(-10f, 1f, 10f), new Vector3(0.4f, 2f, 0.4f), Quaternion.identity, post);
             AddProp("Post SE", new Vector3(10f, 1f, -10f), new Vector3(0.4f, 2f, 0.4f), Quaternion.identity, post);
             AddProp("Post SW", new Vector3(-10f, 1f, -10f), new Vector3(0.4f, 2f, 0.4f), Quaternion.identity, post);
-            AddProp("Bench E", new Vector3(9f, 0.35f, 0f), new Vector3(0.5f, 0.4f, 2.2f), Quaternion.identity, seat);
-            AddProp("Bench W", new Vector3(-9f, 0.35f, 0f), new Vector3(0.5f, 0.4f, 2.2f), Quaternion.identity, seat);
-            AddProp("Banner N", new Vector3(0f, 1.6f, 11.2f), new Vector3(3f, 1.2f, 0.12f), Quaternion.identity, new Color(0.55f, 0.25f, 0.22f));
+            AddProp("Bench E", new Vector3(9f, 0.2f, 0f), new Vector3(0.5f, 0.4f, 2.2f), Quaternion.identity, seat);
+            AddProp("Bench W", new Vector3(-9f, 0.2f, 0f), new Vector3(0.5f, 0.4f, 2.2f), Quaternion.identity, seat);
+            // Freestanding north placard (marks the Join-facing wall) with its base on the ground.
+            AddProp("Banner N", new Vector3(0f, 0.8f, 11.2f), new Vector3(3f, 1.6f, 0.12f), Quaternion.identity, new Color(0.55f, 0.25f, 0.22f));
 
             float hue = UnityEngine.Random.value;
             player = MakeAvatar("Player", Hue(hue));
@@ -128,6 +130,7 @@ namespace Hawkes.Samples
             cam.transform.SetParent(player, false);
             cam.transform.localPosition = new Vector3(0f, 4f, -8f);
             cam.transform.localRotation = Quaternion.Euler(20f, 0f, 0f);
+            if (cam.nearClipPlane < HawkesNetSceneAudit.MinNearClip) cam.nearClipPlane = HawkesNetSceneAudit.MinNearClip;
 
             HawkesNet.SimulatedLatency = UrlNumber("lag");
             HawkesNet.SimulatedJitter = UrlNumber("jitter");
@@ -148,6 +151,24 @@ namespace Hawkes.Samples
             touch = gameObject.AddComponent<HawkesNetTouchControls>();
             touch.StartScreen = start;
             gameObject.SetActive(true);
+
+            // Scene audit (quality rules 2/3/4/11): publish to window.__hawkesNet.scene for smoke.
+            // Uses a dedicated probe camera so the player's follow cam never snaps.
+            StartCoroutine(RunSceneAudit(cam));
+        }
+
+        System.Collections.IEnumerator RunSceneAudit(Camera gameplayCam)
+        {
+            // Let physics settle after CreatePrimitive colliders appear.
+            yield return null;
+            Physics.SyncTransforms();
+            var report = new HawkesNetSceneAudit.Report();
+            HawkesNetSceneAudit.AuditStatic(report, gameplayCam);
+            HawkesNet.ShowedScene(HawkesNetSceneAudit.ToJson(report));
+            float near = gameplayCam != null ? gameplayCam.nearClipPlane : HawkesNetSceneAudit.MinNearClip;
+            // Inside the walls (ArenaHalf 12): radius 10 / height 5 clears posts and the banner.
+            yield return HawkesNetSceneAudit.Orbit(new Vector3(0f, 1.2f, 0f), 10f, 5f, near, report,
+                () => HawkesNet.ShowedScene(HawkesNetSceneAudit.ToJson(report)));
         }
 
         static float UrlNumber(string name)
@@ -167,7 +188,8 @@ namespace Hawkes.Samples
         {
             var wall = GameObject.CreatePrimitive(PrimitiveType.Cube);
             wall.name = "Edge wall";
-            Destroy(wall.GetComponent<BoxCollider>());
+            // Keep the BoxCollider: the scene-audit orbit tests camera-inside against static colliders,
+            // and the capsule is already clamped inside ArenaHalf so it never presses the rim.
             wall.transform.position = centre;
             wall.transform.localScale = size;
             wall.GetComponent<Renderer>().sharedMaterial = material;
@@ -182,6 +204,8 @@ namespace Hawkes.Samples
             go.transform.rotation = rot;
             go.GetComponent<Renderer>().sharedMaterial = MakeMaterial(color);
             // Keep BoxCollider for the capsule ground probe (slopes / steps).
+            // Tilted props (the ramp) get their AABB bottom snapped onto the ground.
+            HawkesNetSceneAudit.SnapBoundsToGround(go.transform);
         }
 
         void SetColor(Color c)

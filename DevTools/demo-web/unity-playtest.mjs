@@ -91,7 +91,38 @@ const farColour = (...hexes) => {
   return hsvHex(best);
 };
 const EMOTES = ['', 'wave', 'hop', 'spin'];
+const sceneAudit = () => globalThis.__hawkesNet?.scene ?? null;
+
+/** Smoke: wait for the sample's scene audit (static + 20 s camera orbit) and fail on any offender by name. */
+async function sceneAuditChecks({ check, until, metric }) {
+  await check('Scene audit reports 0 floating/sunk/z-fight/inside-out and a clear camera orbit', async () => {
+    await until(() => sceneAudit()?.staticDone, 15000, 'Unity to publish the static scene audit (window.__hawkesNet.scene)');
+    const early = sceneAudit();
+    metric('sceneFloating', (early.floating || []).length);
+    metric('sceneSunk', (early.sunk || []).length);
+    metric('sceneZFight', (early.zfight || []).length);
+    metric('sceneInsideOut', (early.insideOut || []).length);
+    metric('sceneNearClip', early.nearClip ?? -1);
+    if ((early.floating || []).length) throw new Error(`quality.ground-contact: floating ${early.floating.join(', ')}`);
+    if ((early.sunk || []).length) throw new Error(`quality.ground-contact: sunk ${early.sunk.join(', ')}`);
+    if ((early.zfight || []).length) throw new Error(`quality.z-fighting: ${early.zfight.join(', ')}`);
+    if ((early.insideOut || []).length) throw new Error(`quality.inside-out: ${early.insideOut.join(', ')}`);
+    if (early.nearClipOk === false || (early.nearClip ?? 0) < 0.1) throw new Error(`quality.camera: nearClip ${early.nearClip} (need ≥ 0.1)`);
+    await until(() => sceneAudit()?.done, 45000, 'the 20 s camera orbit to finish (scene.done)');
+    const s = sceneAudit();
+    metric('sceneOrbitFrames', s.orbitFrames ?? 0);
+    metric('sceneCameraInsideFrames', s.cameraInsideFrames ?? 0);
+    metric('sceneCameraInside', (s.cameraInside || []).join('|'));
+    if ((s.cameraInsideFrames ?? 0) > 0 || (s.cameraInside || []).length) {
+      throw new Error(`quality.camera-clip: camera inside ${ (s.cameraInside || []).join(', ') || 'a collider' } for ${s.cameraInsideFrames} frames`);
+    }
+    if ((s.orbitFrames ?? 0) < 30) throw new Error(`orbit only ran ${s.orbitFrames} frames`);
+    return `floating=0 sunk=0 zfight=0 insideOut=0 cameraInside=0 nearClip=${s.nearClip} orbitFrames=${s.orbitFrames}`;
+  });
+}
+
 async function avatarChecks({ check, main, bot, until, wait, metric }) {
+  await sceneAuditChecks({ check, until, metric });
   const seenByBot = {}; // what the bot last saw from the Unity player
   bot.onPose((id, s) => { if (id === main.id) { seenByBot.c = s?.c; seenByBot.e = s?.e; seenByBot.n = s?.n; } });
   const shown = () => { const p = slot()?.poses?.[bot.id]; try { return p?.e ? JSON.parse(p.e) : null; } catch { return null; } };
@@ -364,7 +395,9 @@ async function phone() {
 }
 
 const baseScenarios = api.scenarios.bind(api);
-api.scenarios = () => [...baseScenarios(), { id: 'phone', title: 'Phone: join by touch, joystick and emote at 390x844', seconds: 90, tags: ['full', 'ui', 'phone'],
+api.scenarios = () => [...baseScenarios().map((s) => (s.id === 'smoke'
+  ? { ...s, seconds: 90, description: (s.description || '') + ' Also waits for window.__hawkesNet.scene (static ground/z-fight/inside-out audit + 20 s camera orbit) and fails on any floating, sunk, z-fight, inside-out or camera-inside offender by name.' }
+  : s)), { id: 'phone', title: 'Phone: join by touch, joystick and emote at 390x844', seconds: 90, tags: ['full', 'ui', 'phone'],
   description: 'Must run at Studio\'s phone size (390x844, touch). Fails if the viewport is not phone-sized. Checks the canvas fills the screen with no sideways scroll; taps Name, types in the phone text box and taps Join (reports joinMs); drags the on-screen joystick right then up and asserts the avatar moves that way (reports joystickMoved); taps Wave/Hop/Spin and checks a second player sees each. Scenes Phone-Join / Phone-Stick / Phone-Emote for phone-sized screenshots.' },
 { id: 'start-screen', title: 'Start screen: name, Join, status connecting/online, a failed join with its reason', seconds: 90, tags: ['full', 'ui'],
   description: 'Types a name on the start screen, presses Join and checks the status line goes connecting then online and the other players see the name; then refuses the ticket request, checks the status says Failed with the reason, and joins again.' },
