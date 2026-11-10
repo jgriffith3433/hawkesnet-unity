@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.13.0 (2026-11-10)
+
+- **Scene audit** (`HawkesNetSceneAudit`): static props must sit on the ground (±2 cm), no coplanar z-fighting pairs,
+  no inside-out / negative-scale meshes, camera near clip ≥ 0.1, and a 20 s scripted orbit never puts the camera inside
+  a static collider. The Avatars sample / demo snap tilted props, seat benches and the north placard on the ground, and
+  publish the report through `HawkesNet.ShowedScene` → `window.__hawkesNet.scene`. Smoke fails on any offender by name;
+  EditMode tests cover a clean arena, a lifted prop, negative scale, near clip and a clear orbit.
+
 ## 0.12.0 (2026-11-10)
 
 - **Remote Animator from track velocity.** The Avatars sample / demo drives each remote humanoid's locomotion blend from

@@ -9,7 +9,8 @@ product). Exit: Leave / Esc back to the Join form.
 ## Landmarks
 - **The Ramp** (southeast wall): a shallow slope, the place you first notice Jump → Land on uneven ground.
 - **The Step** (northwest wall): a low platform for the capsule ground probe and a clean landing silhouette on video.
-- **Corner posts and side benches**: frame the square; the north banner marks the Join-facing wall.
+- **Corner posts and side benches**: frame the square; every prop's base sits on the ground (±2 cm).
+- **Banner N**: a freestanding north placard on the Join-facing wall line (base on the ground, not hung in air).
 
 ## Who lives here
 Tinted **RobotExpressive** humanoids (Tomás Laulhé / three.js, CC0), one per player. Each keeps a colour and a name.
@@ -20,6 +21,7 @@ from HawkesNetTrack's smoothed velocity and the pose Extra (`e`/`n` emotes, `j` 
 Interactions: walk together, soft push-apart when too close, jump the ramp/step, trade emotes and jumps so every
 screen plays the same clip. Events: another player joining (name + colour appear), latency HUD when remotes are
 drawn behind. Ambient: the arena itself (ground, walls, ramp, step). Over time: colours resolve if two players clash.
+Smoke playtest runs a scene audit (ground contact, z-fight, inside-out, camera orbit) through the jslib bridge.
 
 ## Story beats
 1. Join — type a name, enter the arena (gameplay, not a text dump).
