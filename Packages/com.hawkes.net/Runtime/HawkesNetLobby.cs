@@ -13,7 +13,7 @@ namespace Hawkes
     /// Room names (the project's test prefix "t-" keeps beta and playtests apart from live, free and out of the counts):
     ///   live site:  "level-1", then "level-1.2", "level-1.3"... when full
     ///   any other:  "t-level-1"                       (beta sites, localhost)
-    ///   playtest:   "t-&lt;id&gt;/level-1"                  (?room=&lt;id&gt; on the page: Gen's playtest.run with peers)
+    ///   playtest:   "t-&lt;id&gt;/level-1"                  (?room=&lt;id&gt;, or a one-shot id when ?playtest= is set without ?room=)
     /// A prefix (a protocol version, "p1/") goes in front of the area: "p1/level-1".
     /// </summary>
     public sealed class HawkesNetLobby
@@ -98,13 +98,26 @@ namespace Hawkes
         /// <summary>True on one of the game's live hosts.</summary>
         public bool IsLive => Array.IndexOf(LiveHosts, PageHost) >= 0;
 
-        /// <summary>The playtest's private room id (?room= on the page), "" when not a playtest.</summary>
+        // A smoke/playtest page with no ?room= gets one private id for this load, so leftover peers in the shared demo
+        // room (t-unity-demo) cannot spoil colour/name checks. Cleared only when the page reloads.
+        static string playtestSoloRoom;
+
+        /// <summary>The playtest's private room id (?room= on the page, or a one-shot id for ?playtest= without ?room=),
+        /// "" when not a playtest. two-players keeps using ?room= so real browsers can meet.</summary>
         public static string TestRoom
         {
             get
             {
                 string id = Query("room");
-                return System.Text.RegularExpressions.Regex.IsMatch(id, "^[A-Za-z0-9_.-]{1,24}$") ? id : "";
+                if (System.Text.RegularExpressions.Regex.IsMatch(id, "^[A-Za-z0-9_.-]{1,24}$")) return id;
+                string pt = Query("playtest");
+                if (pt.Length > 0 && pt != "two-players")
+                {
+                    if (string.IsNullOrEmpty(playtestSoloRoom))
+                        playtestSoloRoom = "pt" + UnityEngine.Random.Range(100000, 999999);
+                    return playtestSoloRoom;
+                }
+                return "";
             }
         }
 

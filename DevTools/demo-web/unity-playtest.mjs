@@ -60,6 +60,23 @@ const hueOf = (hex) => {
   return ((h / 6) + 1) % 1;
 };
 const hueGap = (a, b) => { const d = Math.abs(hueOf(a) - hueOf(b)); return Math.min(d, 1 - d); };
+// Same rule as the Avatars sample: when two hues sit within 0.08, the id that sorts last picks the free hue farthest from the rest.
+const hsvHex = (h, s = 0.65, v = 0.95) => {
+  const i = Math.floor(h * 6), f = h * 6 - i, p = v * (1 - s), q = v * (1 - f * s), t = v * (1 - (1 - f) * s);
+  const [r, g, b] = [[v, t, p], [q, v, p], [p, v, t], [p, q, v], [t, p, v], [v, p, q]][i % 6];
+  return '#' + [r, g, b].map((x) => Math.round(x * 255).toString(16).padStart(2, '0')).join('');
+};
+const farColour = (...hexes) => {
+  const avoids = hexes.filter(Boolean).map(hueOf);
+  let best = 0, bestGap = -1;
+  for (let i = 0; i < 24; i++) {
+    const h = i / 24;
+    let gap = 1;
+    for (const o of avoids) gap = Math.min(gap, Math.min(Math.abs(h - o), 1 - Math.abs(h - o)));
+    if (gap > bestGap) { bestGap = gap; best = h; }
+  }
+  return hsvHex(best);
+};
 const EMOTES = ['', 'wave', 'hop', 'spin'];
 async function avatarChecks({ check, main, bot, until, wait, metric }) {
   const seenByBot = {}; // what the bot last saw from the Unity player
@@ -67,6 +84,13 @@ async function avatarChecks({ check, main, bot, until, wait, metric }) {
   const shown = () => { const p = slot()?.poses?.[bot.id]; try { return p?.e ? JSON.parse(p.e) : null; } catch { return null; } };
   await check('Two players show different colours and names', async () => {
     await until(() => seenByBot.c && sentExtra?.c, 5000, 'the Unity player to send its colour');
+    // The bot used to keep a fixed orange (#ff9d2e). ~16% of random Unity hues sit within 0.08 of that, and the sample
+    // only moves the later-sorted id — so when Unity's id sorted first the check timed out on two colours that looked
+    // different on screen (e.g. #F26455 vs #ff9d2e, hue gap ~0.073). Resolve like the sample when we sort last.
+    if (hueGap(seenByBot.c, botStyle.c) < 0.08 && bot.id > main.id) {
+      botStyle.c = farColour(seenByBot.c);
+      bot.pose([3, 1, 3], 0);
+    }
     await until(() => hueGap(seenByBot.c, botStyle.c) >= 0.08, 5000, () => `the two colours to differ (Unity ${seenByBot.c}, bot ${botStyle.c})`);
     await until(() => shown()?.c === botStyle.c, 5000, 'the Unity page to receive the bot colour');
     const mine = bot.peers.get(main.id)?.name, theirs = main.peers.get(bot.id)?.name;
@@ -96,6 +120,8 @@ async function avatarChecks({ check, main, bot, until, wait, metric }) {
 const openBotPlayer = async () => {
   const { join } = await import(`${endpoint()}/sdk/hawkes-net@1.mjs`);
   const m = main();
+  // Prefer a colour already far from the Unity player's before the first pose, so the capsules look distinct from join.
+  if (sentExtra?.c && hueGap(sentExtra.c, botStyle.c) < 0.08) botStyle.c = farColour(sentExtra.c);
   const b = await join(m.room, { project: 'netdemo', endpoint: endpoint(), transport: m.transport === 'p2p' ? 'auto' : 'relay', name: 'Playtest bot', role: 'player', sub: `pt-${Math.random()}`, log: false });
   // Every pose the bot makes carries its look, as the sample's players do.
   const pose = b.pose.bind(b);
