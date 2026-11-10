@@ -304,9 +304,11 @@ api.scenarios = () => [...baseScenarios(), { id: 'phone', title: 'Phone: the can
 { id: 'smooth', title: 'Smooth remote avatar: moves every frame, no snapping at 150 ms latency, prediction capped at 250 ms then holds, Latency HUD and F3 debug line', seconds: 75, tags: ['full', 'netcode'],
   description: 'Joins from the start screen, opens a second player that walks a figure eight in front of the camera, and reads where Unity draws it every frame (window.__hawkesNet.watch): 6 s on the plain connection (it must move every frame, facing where it goes), then 10 s with 150 ms (+0-30 ms jitter) of simulated latency on the poses (no frame may step faster than twice its top speed or turn more than twice its top turn rate). Then it checks the HUD (plain "Latency: N ms"; the detail line only after F3), and stops the bot\'s poses for 3 s: the prediction must never pass 250 ms and the avatar must hold still.' },
 { id: 'crowd', title: 'Two avatars never share a spot, and a 30 s walk keeps the avatar on the ground inside the edge walls', seconds: 90, tags: ['full', 'avatars'],
-  description: 'Joins from the start screen and opens a second player. Walks the Unity player (real key presses) straight at the bot and keeps pushing: it must stay apart (never on the same centre), and settle at least 0.55 m away once the keys are let go. Then the bot is put exactly on the Unity player\'s spot (a setup shortcut): the Unity player must ease apart to 0.55 m or more. Then the bot goes far away and the player walks in every direction for 30 s (d, s, a, w, then diagonals): every pose it sends must stay on the ground (y = 1) and inside the arena (the edge walls), and it must reach an edge.' }];
+  description: 'Joins from the start screen and opens a second player. Walks the Unity player (real key presses) straight at the bot and keeps pushing: it must stay apart (never on the same centre), and settle at least 0.55 m away once the keys are let go. Then the bot is put exactly on the Unity player\'s spot (a setup shortcut): the Unity player must ease apart to 0.55 m or more. Then the bot goes far away and the player walks in every direction for 30 s (d, s, a, w, then diagonals): every pose it sends must stay on the ground (y = 1) and inside the arena (the edge walls), and it must reach an edge.' },
+{ id: 'page', title: 'Playtest hook appears while loading, demo-root.json marks the folder, load errors show a card', seconds: 30, tags: ['smoke', 'ui'],
+  description: 'Checks the inline stub put window.hawkesPlaytest up before Unity finished (within 1 s of page start), that ./demo-root.json answers so a deeper path can relocate here, and that a load failure shows the plain error card (via the page helper, same card ?failLoad=1 uses).' }];
 // The scenarios played here rather than by net-playtest.mjs: their own run, panel and report.
-const SIDE = ['start-screen', 'smooth', 'crowd', 'phone'];
+const SIDE = ['start-screen', 'smooth', 'crowd', 'phone', 'page'];
 
 let sr = null; // the start-screen run
 const r1 = (n) => Math.round(n * 10) / 10;
@@ -677,6 +679,55 @@ const smoothEnd = async () => {
   if (smoothBot) { const b = smoothBot; smoothBot = null; try { await b.leave(); } catch { /* gone */ } }
 };
 
+// "page": the WebGL template's early hook, demo-root.json marker, and plain error card (no Join / no second player).
+async function page() {
+  sr.state.scene = 'Page';
+  srEvent('scene', 'Page');
+  await srCheck('window.hawkesPlaytest was a stub within 1 s of page start (before Unity finished)', async () => {
+    const at = globalThis.__hawkesPlaytestStubAt;
+    if (typeof at !== 'number') throw new Error('the template never set window.__hawkesPlaytestStubAt');
+    if (at > 1000) throw new Error(`the stub appeared at ${Math.round(at)} ms (need within 1000 ms)`);
+    const stub = globalThis.__hawkesPlaytestStub;
+    if (!stub || !stub._stub) throw new Error('window.__hawkesPlaytestStub is missing');
+    sr.metrics.stubAtMs = Math.round(at);
+    srEvent('hook-early', `${Math.round(at)} ms`);
+    return `stub at ${Math.round(at)} ms`;
+  });
+  sr.progress = 0.35;
+  await srCheck('demo-root.json answers next to index.html (deeper paths can relocate here)', async () => {
+    const res = await fetch('./demo-root.json', { cache: 'no-store' });
+    if (!res.ok) throw new Error(`./demo-root.json returned ${res.status}`);
+    const body = await res.json().catch(() => ({}));
+    if (body?.demo !== 'hawkes-net-unity') throw new Error(`demo-root.json was ${JSON.stringify(body)}`);
+    const helper = globalThis.__hawkesDemoRoot;
+    if (!helper?.find) throw new Error('window.__hawkesDemoRoot.find is missing');
+    const found = await helper.find();
+    // At the real demo root the first probe (./) wins and find() returns "".
+    if (found !== '') throw new Error(`findDemoRoot returned ${JSON.stringify(found)}, expected "" at the demo root`);
+    srEvent('demo-root', 'hawkes-net-unity');
+    return 'demo-root.json ok; ./ is the demo root';
+  });
+  sr.progress = 0.7;
+  await srCheck('A load failure shows the plain error card instead of a blank page', async () => {
+    const helper = globalThis.__hawkesDemoRoot;
+    const card = document.getElementById('hawkes-error-card');
+    if (!helper?.showError || !card) throw new Error('the template error card is missing');
+    helper.showError('playtest: simulated load failure');
+    await waitFor(() => card.classList.contains('show'), 2000, 'the error card to show');
+    const detail = document.getElementById('hawkes-error-detail')?.textContent || '';
+    if (!/simulated load failure/.test(detail)) throw new Error(`error detail was "${detail}"`);
+    srEvent('error-card', detail);
+    // Put the demo back so the footage ends on the game, not the card.
+    card.classList.remove('show');
+    const container = document.getElementById('unity-container');
+    if (container) container.style.display = '';
+    const loading = document.getElementById('unity-loading-bar');
+    if (loading) loading.hidden = true;
+    return 'error card shown, then cleared';
+  });
+  sr.progress = 1;
+}
+
 api.start = async (id, options = {}) => {
   if (!SIDE.includes(id)) {
     try { await joinFromStartScreen(); } catch (e) { startLog.push({ at: performance.now(), text: `bot: ${e?.message ?? e}` }); globalThis.__hawkesJoinProblem = e?.message ?? String(e); }
@@ -687,7 +738,9 @@ api.start = async (id, options = {}) => {
   sr = { id, t0: performance.now(), done: false, lines: [], events: [], problems: [], metrics: {}, progress: 0, state: { ready: true, status: 'running', progress: 0, scene: 'Demo' } };
   const mine = sr;
   srEvent('start', id); srEvent('scene', 'Demo'); srPanel();
-  try { await (id === 'smooth' ? smooth() : id === 'crowd' ? crowd() : id === 'phone' ? phone() : startScreen()); } catch (e) { sr.problems.push({ severity: 'bug', message: `bot error: ${e?.message ?? e}` }); }
+  try {
+    await (id === 'smooth' ? smooth() : id === 'crowd' ? crowd() : id === 'phone' ? phone() : id === 'page' ? page() : startScreen());
+  } catch (e) { sr.problems.push({ severity: 'bug', message: `bot error: ${e?.message ?? e}` }); }
   finally { if (id === 'smooth' || id === 'crowd' || id === 'phone') await smoothEnd(); }
   if (mine !== sr) return;
   mine.done = true; mine.seconds = srNow();
@@ -704,3 +757,20 @@ api.stop = () => { if (sr && !sr.done) { sr.done = true; sr.state.status = 'done
 // Which scenario was started last decides what state() and report() answer.
 const startAny = api.start;
 api.start = (id, options) => { api.__last = id; return startAny(id, options); };
+
+// Keep the template's stub as window.hawkesPlaytest until the sample is ready, then upgrade to this api
+// (and run any start() the stub queued while status was "loading").
+(function promotePlaytestStub() {
+  const stub = globalThis.__hawkesPlaytestStub;
+  if (!stub || !stub._stub) return;
+  globalThis.hawkesPlaytest = stub;
+  const tick = () => {
+    let ready = false;
+    try { ready = Boolean(api.state()?.ready); } catch { /* not yet */ }
+    if (!ready) { setTimeout(tick, 100); return; }
+    globalThis.hawkesPlaytest = api;
+    const q = typeof stub.takeQueue === 'function' ? stub.takeQueue() : null;
+    if (q?.id) api.start(q.id, q.options || {});
+  };
+  tick();
+})();

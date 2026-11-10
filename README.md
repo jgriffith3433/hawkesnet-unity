@@ -43,6 +43,7 @@ lobby.Join("lobby");
 | `DevTools/TrackTest/` | `HawkesNetTrack` (smooth remote avatars) with plain `dotnet`: a figure-eight walker at 60 fps through 150 ms of latency, jitter, a stall, a clock correction; make its `.csproj` like ManagedTest's (Compile `Runtime/HawkesNetTrack.cs`), then `dotnet run --project DevTools/TrackTest` |
 | `DevTools/ManagedTest/` | The managed client end to end with plain `dotnet`, against a Hawkes Net service: `dotnet run --project DevTools/ManagedTest -- http://127.0.0.1:8786` |
 | `DevTools/make_unitypackage.py` | The Asset Store `.unitypackage` (the package as `Assets/HawkesNet`), built without Unity |
+| `Assets/WebGLTemplates/HawkesNetDemo/` | Demo WebGL page template (early playtest stub, `demo-root.json` relocation, error card) |
 | `PUBLISHING.md`, `LISTING.md` | Uploading to the Asset Store, and the listing's text |
 
 The Unity project here (6000.3.7f1) is what the package is tested and uploaded from; the package supports 2021.3+.

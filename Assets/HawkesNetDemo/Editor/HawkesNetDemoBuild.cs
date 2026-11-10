@@ -71,6 +71,8 @@ namespace Hawkes.Demo.Editor
         {
             IncludeShader("Standard");
             MakeScene();
+            // Custom page: early window.hawkesPlaytest stub, relative Build/ paths, demo-root.json relocation.
+            PlayerSettings.WebGL.template = "PROJECT:HawkesNetDemo";
             // Served by static hosts without Content-Encoding (Hawkes Gen's own default build does the same).
             PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Disabled;
             PlayerSettings.WebGL.decompressionFallback = false;
@@ -91,9 +93,19 @@ namespace Hawkes.Demo.Editor
                 if (quit) EditorApplication.Exit(1);
                 return;
             }
+            WriteDemoRoot(outDir);
             AddPlaytest(outDir);
             Debug.Log($"[Hawkes] built the Hawkes Net demo in {s.totalTime.TotalSeconds:0}s, {s.totalSize} bytes");
             if (quit) EditorApplication.Exit(0);
+        }
+
+        /// <summary>
+        /// Marker next to index.html so a page opened too deep under the beta site can find the real demo folder
+        /// (Assets/WebGLTemplates/HawkesNetDemo probes ./, ../, ../../demo-root.json and location.replace()s).
+        /// </summary>
+        static void WriteDemoRoot(string outDir)
+        {
+            File.WriteAllText(Path.Combine(outDir, "demo-root.json"), "{\"demo\":\"hawkes-net-unity\"}\n");
         }
 
         /// <summary>

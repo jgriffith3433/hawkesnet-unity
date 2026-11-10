@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Hawkes Net · {{{ PRODUCT_NAME }}}</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
+      background: #0b0d12; color: #e8eaed;
+      font: 15px/1.45 system-ui, -apple-system, Segoe UI, sans-serif;
+    }
+    #unity-container { position: fixed; inset: 0; width: 100%; height: 100%; }
+    #unity-canvas {
+      width: 100%; height: 100%; display: block;
+      background: {{{ BACKGROUND_COLOR }}};
+      touch-action: none;
+    }
+    #unity-loading-bar {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      background: rgba(11, 13, 18, 0.92); z-index: 2; pointer-events: none;
+    }
+    #unity-loading-bar[hidden] { display: none; }
+    #unity-progress-bar-empty {
+      width: min(280px, 70vw); height: 8px; background: rgba(255,255,255,0.12);
+      border-radius: 4px; overflow: hidden;
+    }
+    #unity-progress-bar-full {
+      width: 0%; height: 100%; background: #5b8cff; transition: width 0.15s linear;
+    }
+    #hawkes-error-card {
+      display: none; position: fixed; inset: 0; z-index: 10;
+      align-items: center; justify-content: center; padding: 24px;
+      background: #0b0d12;
+    }
+    #hawkes-error-card.show { display: flex; }
+    #hawkes-error-card .card {
+      width: min(420px, 100%); padding: 22px 24px; border-radius: 10px;
+      background: #151922; border: 1px solid rgba(255,255,255,0.14);
+      box-shadow: 0 18px 48px rgba(0,0,0,0.45);
+    }
+    #hawkes-error-card h1 {
+      margin: 0 0 8px; font-size: 1.15rem; font-weight: 700; color: #fff;
+    }
+    #hawkes-error-card p { margin: 0 0 10px; color: #b7bec9; }
+    #hawkes-error-detail {
+      margin: 0; font: 12px/1.4 ui-monospace, Menlo, monospace; color: #8d97a8;
+      word-break: break-word; max-height: 6em; overflow: auto;
+    }
+    #unity-warning {
+      position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
+      max-width: 90%; z-index: 4;
+    }
+  </style>
+  <script>
+    // Playtest hook at once (before the Unity loader): Studio sees window.hawkesPlaytest within 1 s.
+    // unity-playtest.mjs upgrades this stub when the sample is ready.
+    (function () {
+      var progress = 0;
+      var status = 'loading';
+      var note = 'loading Unity';
+      var queued = null;
+      var stub = {
+        version: 1,
+        product: 'hawkes-net-unity',
+        _stub: true,
+        scenarios: function () {
+          return [
+            { id: 'smoke', title: 'Two players in one page', seconds: 45, tags: ['smoke'] },
+            { id: 'page', title: 'Playtest hook, demo root and load error card', seconds: 30, tags: ['smoke', 'ui'] }
+          ];
+        },
+        start: function (id, options) { queued = { id: id, options: options || {} }; },
+        stop: function () { queued = null; },
+        state: function () {
+          return { ready: false, status: status, progress: progress, note: note, scene: 'Loading' };
+        },
+        report: function () { return null; },
+        setProgress: function (p) {
+          progress = Math.max(0, Math.min(1, Number(p) || 0));
+          status = 'loading';
+          note = 'loading Unity ' + Math.round(progress * 100) + '%';
+        },
+        setError: function (message) {
+          status = 'error';
+          note = String(message || 'load failed');
+          progress = progress || 0;
+        },
+        takeQueue: function () { var q = queued; queued = null; return q; }
+      };
+      window.__hawkesPlaytestStub = stub;
+      window.__hawkesPlaytestStubAt = performance.now();
+      window.hawkesPlaytest = stub;
+    })();
+  </script>
+</head>
+<body>
+  <div id="unity-container">
+    <canvas id="unity-canvas" width={{{ WIDTH }}} height={{{ HEIGHT }}} tabindex="-1"></canvas>
+    <div id="unity-loading-bar">
+      <div id="unity-progress-bar-empty" role="progressbar" aria-label="Loading" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div id="unity-progress-bar-full"></div>
+      </div>
+    </div>
+    <div id="unity-warning"></div>
+  </div>
+  <div id="hawkes-error-card" role="alert" aria-live="assertive">
+    <div class="card">
+      <h1>Hawkes Net demo could not load</h1>
+      <p>The WebGL build next to this page was missing or failed to start.</p>
+      <p id="hawkes-error-detail"></p>
+    </div>
+  </div>
+  <script>
+    (function () {
+      var container = document.querySelector('#unity-container');
+      var canvas = document.querySelector('#unity-canvas');
+      var loadingBar = document.querySelector('#unity-loading-bar');
+      var progressBarFull = document.querySelector('#unity-progress-bar-full');
+      var progressBarEmpty = document.querySelector('#unity-progress-bar-empty');
+      var warningBanner = document.querySelector('#unity-warning');
+      var errorCard = document.querySelector('#hawkes-error-card');
+      var errorDetail = document.querySelector('#hawkes-error-detail');
+      var stub = window.__hawkesPlaytestStub;
+      var buildUrl = 'Build';
+      var loaderUrl = buildUrl + '/{{{ LOADER_FILENAME }}}';
+      var config = {
+        arguments: [],
+        dataUrl: buildUrl + '/{{{ DATA_FILENAME }}}',
+        frameworkUrl: buildUrl + '/{{{ FRAMEWORK_FILENAME }}}',
+        codeUrl: buildUrl + '/{{{ CODE_FILENAME }}}',
+#if MEMORY_FILENAME
+        memoryUrl: buildUrl + '/{{{ MEMORY_FILENAME }}}',
+#endif
+#if SYMBOLS_FILENAME
+        symbolsUrl: buildUrl + '/{{{ SYMBOLS_FILENAME }}}',
+#endif
+        streamingAssetsUrl: 'StreamingAssets',
+        companyName: "{{{ COMPANY_NAME }}}",
+        productName: "{{{ PRODUCT_NAME }}}",
+        productVersion: "{{{ PRODUCT_VERSION }}}",
+        showBanner: unityShowBanner,
+      };
+
+      // Marker next to index.html (HawkesNetDemoBuild writes it). Relative probes only: beta sites live under a path prefix.
+      // One find() tries each path once (no repeats in that pass); a new find() may try again.
+      var DEMO_ROOT_TRIES = ['./demo-root.json', '../demo-root.json', '../../demo-root.json'];
+      var relocating = false;
+
+      function unityShowBanner(msg, type) {
+        function updateBannerVisibility() {
+          warningBanner.style.display = warningBanner.children.length ? 'block' : 'none';
+        }
+        var div = document.createElement('div');
+        div.innerHTML = msg;
+        warningBanner.appendChild(div);
+        if (type === 'error') {
+          div.style = 'background: #c33; padding: 10px;';
+        } else {
+          if (type === 'warning') div.style = 'background: #cc0; padding: 10px;';
+          setTimeout(function () {
+            warningBanner.removeChild(div);
+            updateBannerVisibility();
+          }, 5000);
+        }
+        updateBannerVisibility();
+      }
+
+      function showErrorCard(detail) {
+        if (stub && stub.setError) stub.setError(detail);
+        if (loadingBar) loadingBar.hidden = true;
+        if (container) container.style.display = 'none';
+        errorDetail.textContent = String(detail || '');
+        errorCard.classList.add('show');
+        try {
+          window.dispatchEvent(new CustomEvent('hawkes-demo-error', { detail: String(detail || '') }));
+        } catch (e) { /* ignore */ }
+      }
+
+      function setProgress(p) {
+        var v = Math.max(0, Math.min(1, Number(p) || 0));
+        if (stub && stub.setProgress) stub.setProgress(v);
+        if (progressBarFull) progressBarFull.style.width = (100 * v) + '%';
+        if (progressBarEmpty) progressBarEmpty.setAttribute('aria-valuenow', String(Math.round(100 * v)));
+      }
+
+      // If Build/ paths 404 because the page was opened deeper than the demo root, find demo-root.json and relocate.
+      // Returns the directory prefix ("", "../", or "../../"), or null when none answered. "" is a real hit (this folder).
+      function findDemoRoot() {
+        var chain = Promise.resolve(null);
+        DEMO_ROOT_TRIES.forEach(function (path) {
+          chain = chain.then(function (found) {
+            if (found !== null) return found;
+            return fetch(path, { method: 'GET', cache: 'no-store' }).then(function (res) {
+              if (!res.ok) return null;
+              return res.json().catch(function () { return {}; }).then(function () {
+                var dir = path.replace(/demo-root\.json$/, '');
+                return dir === './' ? '' : dir;
+              });
+            }).catch(function () { return null; });
+          });
+        });
+        return chain;
+      }
+
+      function relocateToDemoRoot(dir) {
+        if (relocating) return;
+        relocating = true;
+        var base = dir || '';
+        // dir is '' (same folder), '../', or '../../' — land on that folder's index, keep the query string.
+        var target = new URL(base + 'index.html', location.href);
+        target.search = location.search;
+        target.hash = location.hash;
+        if (target.href === location.href) {
+          showErrorCard('demo-root.json was found here, but the WebGL build still failed to load.');
+          return;
+        }
+        location.replace(target.href);
+      }
+
+      function onLoadFailure(reason) {
+        var detail = String(reason || 'unknown error');
+        findDemoRoot().then(function (dir) {
+          if (dir !== null && dir !== undefined) {
+            // Found a marker: if it is this folder (''), do not loop — show the error. Parents get a replace.
+            if (dir === '') {
+              showErrorCard(detail);
+              return;
+            }
+            relocateToDemoRoot(dir);
+            return;
+          }
+          showErrorCard(detail);
+        });
+      }
+
+      window.__hawkesDemoRoot = {
+        tries: DEMO_ROOT_TRIES.slice(),
+        find: findDemoRoot,
+        showError: showErrorCard,
+        setProgress: setProgress,
+      };
+
+      // ?failLoad=1: show the error card without starting Unity (playtest criterion / manual check).
+      if (/[?&]failLoad=1\b/.test(location.search)) {
+        showErrorCard('failLoad=1: simulated missing WebGL build.');
+        return;
+      }
+
+      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+        var meta = document.createElement('meta');
+        meta.name = 'viewport';
+        meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes';
+        document.getElementsByTagName('head')[0].appendChild(meta);
+      }
+
+      setProgress(0);
+
+      var script = document.createElement('script');
+      script.src = loaderUrl;
+      script.onload = function () {
+        if (typeof createUnityInstance !== 'function') {
+          onLoadFailure('Unity loader loaded, but createUnityInstance was missing.');
+          return;
+        }
+        createUnityInstance(canvas, config, setProgress).then(function () {
+          loadingBar.hidden = true;
+          setProgress(1);
+        }).catch(function (message) {
+          onLoadFailure(message);
+        });
+      };
+      script.onerror = function () {
+        onLoadFailure('Could not load ' + loaderUrl + ' (wrong folder, or the build is missing).');
+      };
+      document.body.appendChild(script);
+    })();
+  </script>
+</body>
+</html>
