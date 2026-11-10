@@ -255,6 +255,17 @@ mergeInto(LibraryManager.library, {
     } catch (e) {}
   },
 
+  // Floating nameplates (HawkesNet.ShowedNames): camera-facing plates, 360° orbit mirrored-frame count, occlusion probe.
+  // window.__hawkesNet.names is the newest report for the nameplates playtest.
+  HawkesNet_Names: function (jsonPtr) {
+    var S = window.__hawkesNet = window.__hawkesNet || { rooms: {} };
+    try {
+      var a = JSON.parse(UTF8ToString(jsonPtr));
+      a.t = performance.now();
+      S.names = a;
+    } catch (e) {}
+  },
+
   // Phones and tablets: 1 when the page's main pointer is a finger (or the page has touch points and a mobile browser).
   HawkesNet_IsTouch: function () {
     try {

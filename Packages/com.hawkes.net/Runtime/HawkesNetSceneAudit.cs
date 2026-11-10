@@ -44,6 +44,8 @@ namespace Hawkes
             if (r == null || !r.enabled || !r.gameObject.activeInHierarchy) return false;
             var n = r.gameObject.name;
             if (n == "Ground" || n == "Player" || n.StartsWith("Remote", StringComparison.Ordinal)) return false;
+            if (n == "NamePlateOccluder" || n == "Back" || n == "Text" || n == "Face" || n == "NamePlate") return false;
+            if (r.GetComponentInParent<HawkesNetNamePlate>() != null) return false;
             if (r.GetComponentInParent<HawkesNetAvatars>() != null && r.GetComponent<MeshFilter>() == null) return false;
             // Skip skinned avatar meshes under the local/remote roots.
             if (r is SkinnedMeshRenderer) return false;

@@ -247,7 +247,7 @@ namespace Hawkes
     public static class HawkesNet
     {
         /// <summary>This package's version (what package.json says; keep the two in step on a release). The start screen shows it.</summary>
-        public const string PackageVersion = "0.13.0";
+        public const string PackageVersion = "0.14.0";
 
 #if UNITY_WEBGL && !UNITY_EDITOR
         [DllImport("__Internal")] static extern void HawkesNet_Join(int handle, string room, string optionsJson, string receiver);
@@ -267,6 +267,7 @@ namespace Hawkes
         [DllImport("__Internal")] static extern void HawkesNet_Hud(string json);
         [DllImport("__Internal")] static extern void HawkesNet_Anim(string json);
         [DllImport("__Internal")] static extern void HawkesNet_Scene(string json);
+        [DllImport("__Internal")] static extern void HawkesNet_Names(string json);
         [DllImport("__Internal")] static extern int HawkesNet_IsTouch();
         [DllImport("__Internal")] static extern void HawkesNet_Touch(string json);
         [DllImport("__Internal")] static extern void HawkesNet_TextOpen(string label, string value, int max, string hint);
@@ -292,6 +293,7 @@ namespace Hawkes
         static void HawkesNet_Hud(string json) { }
         static void HawkesNet_Anim(string json) { }
         static void HawkesNet_Scene(string json) { }
+        static void HawkesNet_Names(string json) { }
         static int HawkesNet_IsTouch() => 0;
         static void HawkesNet_Touch(string json) { }
         static void HawkesNet_TextOpen(string label, string value, int max, string hint) { }
@@ -365,6 +367,14 @@ namespace Hawkes
         {
             if (!Live || string.IsNullOrEmpty(json)) return;
             HawkesNet_Scene(json);
+        }
+
+        /// <summary>Floating nameplates (WebGL), for the nameplates playtest: window.__hawkesNet.names =
+        /// {orbitDone, mirroredFrames, occlusion*, plates:[{text,occluded,shown,mirrored,screenPx,scale}]}.</summary>
+        public static void ShowedNames(string json)
+        {
+            if (!Live || string.IsNullOrEmpty(json)) return;
+            HawkesNet_Names(json);
         }
 
         /// <summary>True on a phone or tablet: the main pointer is a finger (a WebGL page says so; elsewhere the device has a

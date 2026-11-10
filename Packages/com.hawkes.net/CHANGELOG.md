@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.14.0 (2026-11-10)
+
+- **World-space nameplates** (`HawkesNetNamePlate`): floating names sit above the head bone (or 2.05 m on the capsule
+  stand-in), copy the camera's rotation each LateUpdate (never `LookAt`, never a negative scale), use a soft translucent
+  backing plate, grow to stay readable on a 390 px phone, and hide when a wall is between the camera and the plate.
+  Avatars sample / demo stopped drawing names with OnGUI. Bridge: `HawkesNet.ShowedNames` → `window.__hawkesNet.names`
+  (orbit mirrored-frame count, occlusion probe, per-plate scale / screenPx). Playtest scenario `nameplates`; EditMode
+  tests assert no TextMesh has a negative scale. Demo WebGL build always-includes `GUI/Text Shader` and `Sprites/Default`.
+
 ## 0.13.0 (2026-11-10)
 
 - **Scene audit** (`HawkesNetSceneAudit`): static props must sit on the ground (±2 cm), no coplanar z-fighting pairs,

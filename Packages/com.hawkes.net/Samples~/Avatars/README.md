@@ -12,7 +12,8 @@
    runs the same bake before it compiles. Without the bake you still get a tinted capsule stand-in so the room joins.
 4. Build for WebGL (Build And Run) and open the page in two tabs. Each opens on a start screen (`HawkesNetStartScreen`): type a
    name, press Join (or Enter); the status line says connecting, online or what failed, and Esc leaves. Then each tab walks a
-   tinted humanoid with WASD and sees the other's, with its colour and a floating name.
+   tinted humanoid with WASD and sees the other's, with its colour and a world-space floating name above the head
+   (camera-facing, soft plate, hidden behind walls).
 5. Press **1**, **2** or **3** to wave, hop or spin, and **Space** to jump: the other tab sees the emote or the jump
    (Jump → Land → Locomotion). Colour, emote (`e`/`n`) and jump count (`j`) travel in the pose's `Extra` values (see
    `Style` in the sample). Remotes blend walk/run from `HawkesNetTrack`'s smoothed velocity.
