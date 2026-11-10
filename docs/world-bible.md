@@ -1,0 +1,27 @@
+# Hawkes Net for Unity: world bible
+
+## Areas
+**The Arena** — a small square practice green (about 24 m across) edged with low walls. Mood: clear daylight demo
+space, nothing hidden. Players drop in from the Join screen, walk, jump the ramp and the step, wave at whoever else
+is in the room. Ambient: open sky, soft footfalls implied by the locomotion blend; no music bed (the package is the
+product). Exit: Leave / Esc back to the Join form.
+
+## Landmarks
+- **The Ramp** (southeast wall): a shallow slope, the place you first notice Jump → Land on uneven ground.
+- **The Step** (northwest wall): a low platform for the capsule ground probe and a clean landing silhouette on video.
+- **Corner posts and side benches**: frame the square; the north banner marks the Join-facing wall.
+
+## Who lives here
+Tinted **RobotExpressive** humanoids (Tomás Laulhé / three.js, CC0), one per player. Each keeps a colour and a name.
+Routines: idle when still; walk/run from ground speed; Space jumps; keys 1–3 wave / hop / spin. Remotes mirror that
+from HawkesNetTrack's smoothed velocity and the pose Extra (`e`/`n` emotes, `j` jumps), not from raw packets.
+
+## What happens
+Interactions: walk together, soft push-apart when too close, jump the ramp/step, trade emotes and jumps so every
+screen plays the same clip. Events: another player joining (name + colour appear), latency HUD when remotes are
+drawn behind. Ambient: the arena itself (ground, walls, ramp, step). Over time: colours resolve if two players clash.
+
+## Story beats
+1. Join — type a name, enter the arena (gameplay, not a text dump).
+2. Meet — another humanoid appears in their colour; you see them walk from the smoothed track.
+3. Play — jump and emote; they play on the other screen; landings return to locomotion without sticking in the air.

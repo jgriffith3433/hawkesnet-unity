@@ -230,6 +230,20 @@ mergeInto(LibraryManager.library, {
     try { S.hud = JSON.parse(UTF8ToString(jsonPtr)); } catch (e) {}
   },
 
+  // Per-frame animation quality (HawkesNet.ShowedAnim): grounded, airborne, foot-slide, state/motion mismatch for local
+  // and remote characters. window.__hawkesNet.anim is the newest sample; .animLog keeps a short ring for the playtest.
+  HawkesNet_Anim: function (jsonPtr) {
+    var S = window.__hawkesNet = window.__hawkesNet || { rooms: {} };
+    try {
+      var a = JSON.parse(UTF8ToString(jsonPtr));
+      a.t = performance.now();
+      S.anim = a;
+      var log = S.animLog = S.animLog || [];
+      log.push(a);
+      if (log.length > 600) log.splice(0, log.length - 600);
+    } catch (e) {}
+  },
+
   // Phones and tablets: 1 when the page's main pointer is a finger (or the page has touch points and a mobile browser).
   HawkesNet_IsTouch: function () {
     try {

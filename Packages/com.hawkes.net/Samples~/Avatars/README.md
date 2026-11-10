@@ -13,8 +13,9 @@
 4. Build for WebGL (Build And Run) and open the page in two tabs. Each opens on a start screen (`HawkesNetStartScreen`): type a
    name, press Join (or Enter); the status line says connecting, online or what failed, and Esc leaves. Then each tab walks a
    tinted humanoid with WASD and sees the other's, with its colour and a floating name.
-5. Press **1**, **2** or **3** to wave, hop or spin: the other tab sees the emote, with a caption over the name.
-   The colour and the emote travel in the pose's `Extra` values (see `Style` in the sample): copy that into your own game.
+5. Press **1**, **2** or **3** to wave, hop or spin, and **Space** to jump: the other tab sees the emote or the jump
+   (Jump → Land → Locomotion). Colour, emote (`e`/`n`) and jump count (`j`) travel in the pose's `Extra` values (see
+   `Style` in the sample). Remotes blend walk/run from `HawkesNetTrack`'s smoothed velocity.
 6. **On a phone** the same build shows a joystick (drag a thumb anywhere on the left half) and three emote buttons (right);
    tapping the name or room on the Join form raises the phone keyboard. Add `?touch=1` to the address to see them on a
    desktop browser. For the canvas to fill the screen, the page needs the demo's style sheet: `DevTools/demo-web/mobile.css`

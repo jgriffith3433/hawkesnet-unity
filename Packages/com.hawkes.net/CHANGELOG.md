@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.12.0 (2026-11-10)
+
+- **Remote Animator from track velocity.** The Avatars sample / demo drives each remote humanoid's locomotion blend from
+  `Remote.Velocity` (HawkesNetTrack smoothing), not raw pose packets, so walk/run stay in step with the drawn motion.
+- **Jump sync + ground probe.** Space jumps; the jump count rides in pose Extra (`j`) like emotes (`e`/`n`), so every
+  screen plays Jump → Land → Locomotion. A capsule SphereCast grounds landings on the flat floor, a ramp and a step
+  (quality rule 5: no stuck airborne state past 0.3 s).
+- **Playtest bridge:** `HawkesNet.ShowedAnim` → `window.__hawkesNet.anim` / `.animLog` reports per-frame grounded,
+  airborne, land, foot-slide, state/motion mismatch and stuck-airborne for local and remote characters. Scenarios
+  `anim-sync` and `two-players` fail above thresholds.
+
 ## 0.11.0 (2026-11-10)
 
 - **Avatars sample: tinted RobotExpressive humanoid.** Replaces the capsule with Tomás Laulhé / three.js's CC0
