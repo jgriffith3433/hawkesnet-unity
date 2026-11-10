@@ -220,17 +220,39 @@ async function typeIntoBox(text) {
   await waitFor(() => !document.getElementById('hawkes-net-text'), 3000, 'the text box to close on OK');
 }
 
+// Phone playtest must run at Studio's phone size (device: "phone" → 390x844, touch). Soft warnings used to let a
+// desktop viewport "pass" and lie about the layout; this fails instead so the report is honest.
+const PHONE_W = 390, PHONE_H = 844;
+function ensurePhoneTouchQuery() {
+  // Belt-and-suspenders: the WebGL template already adds ?touch=1 before Unity loads when ?playtest=phone
+  // (Application.absoluteURL is fixed at load). This covers a late start() on a page that lacked it.
+  try {
+    const u = new URL(location.href);
+    if (u.searchParams.get('touch') === '1') return;
+    u.searchParams.set('touch', '1');
+    history.replaceState(null, '', u.toString());
+  } catch { /* file:// or locked history */ }
+}
+function setPhoneScene(name) {
+  sr.state.scene = name;
+  srEvent('scene', name);
+}
 async function phone() {
+  ensurePhoneTouchQuery();
   const c = document.querySelector('canvas');
   const dpr = window.devicePixelRatio || 1;
-  // 1. The page: the canvas is the screen.
+  setPhoneScene('Phone-Join');
+  // 1. The page: Studio's phone viewport, canvas fills it, no sideways scroll.
   if (!await srCheck('At phone size the canvas fills the screen with no sideways scroll', async () => {
     await waitFor(startUp, 120000, 'Unity to show the start screen');
     const r = c.getBoundingClientRect(), de = document.documentElement;
     const w = innerWidth, h = innerHeight;
     sr.metrics.viewport = `${w}x${h}@${dpr}`; sr.metrics.canvasCss = `${Math.round(r.width)}x${Math.round(r.height)}`; sr.metrics.canvasPx = `${c.width}x${c.height}`;
+    sr.metrics.viewportW = w; sr.metrics.viewportH = h;
     srEvent('view', `viewport ${w}x${h} at ${dpr}x, canvas ${Math.round(r.width)}x${Math.round(r.height)} css px (${c.width}x${c.height} drawn)`);
-    if (w > 700) sr.problems.push({ severity: 'warning', message: `the page is ${w} px wide, not phone size: the phone checks ran at this size` });
+    if (Math.abs(w - PHONE_W) > 16 || Math.abs(h - PHONE_H) > 32) {
+      throw new Error(`viewport is ${w}x${h}, not ${PHONE_W}x${PHONE_H}: play this scenario with device phone (Studio's 390x844 touch run), not a desktop window`);
+    }
     if (Math.abs(r.left) > 1 || Math.abs(r.top) > 1 || Math.abs(r.width - w) > 1.5 || Math.abs(r.height - h) > 1.5) throw new Error(`the canvas is ${Math.round(r.width)}x${Math.round(r.height)} at ${Math.round(r.left)},${Math.round(r.top)} on a ${w}x${h} screen`);
     if (de.scrollWidth > w + 1 || document.body.scrollWidth > w + 1) throw new Error(`the page is wider than the screen (${Math.max(de.scrollWidth, document.body.scrollWidth)} px of ${w})`);
     if (de.scrollHeight > h + 1) throw new Error(`the page is taller than the screen (${de.scrollHeight} px of ${h})`);
@@ -239,7 +261,7 @@ async function phone() {
     if (moved > 0) throw new Error(`the page scrolled sideways by ${moved} px`);
     const want = r.width * dpr;
     if (Math.abs(c.width - want) > Math.max(2, want * 0.02)) throw new Error(`the canvas is drawn ${c.width} px wide for ${Math.round(want)} px of screen (devicePixelRatio ${dpr}): blurry or too heavy`);
-    return `${Math.round(r.width)}x${Math.round(r.height)} css px, drawn ${c.width}x${c.height} at ${dpr}x, no scroll`;
+    return `${Math.round(r.width)}x${Math.round(r.height)} css px (~${PHONE_W}x${PHONE_H}), drawn ${c.width}x${c.height} at ${dpr}x, no scroll`;
   })) return;
   sr.progress = 0.15;
 
@@ -260,7 +282,7 @@ async function phone() {
     await waitFor(() => net.peers?.get(net.id), 10000, 'the room to list this player');
     const got = net.peers.get(net.id)?.name ?? net.peers.get(net.id);
     if (got !== typed) throw new Error(`joined as "${got}", not the "${typed}" typed in the box`);
-    return `typed "${typed}", tapped Join, ${statusLines(mark).join(' -> ')}`;
+    return `typed "${typed}", tapped Join in ${Math.round(ms)} ms, ${statusLines(mark).join(' -> ')}`;
   })) return;
   sr.progress = 0.4;
 
@@ -268,9 +290,11 @@ async function phone() {
   main(); // wraps the pose call, so what the Unity player sends is seen
   await waitFor(() => sent, 5000, 'the Unity player to send its place');
   await waitFor(() => touchState()?.stick, 5000, 'the game to report its joystick');
+  setPhoneScene('Phone-Stick');
 
-  // 3. The joystick: a thumb on the left, drag right then up; the capsule must go there.
-  await srCheck('A touch joystick moves the avatar', async () => {
+  // 3. The joystick: a thumb on the left, drag right then up; the capsule must go the way the thumb dragged.
+  sr.metrics.joystickMoved = 0;
+  if (!await srCheck('Dragging the on-screen joystick moves the avatar the way you drag', async () => {
     const t = touchState();
     if (!t.active) throw new Error('the on-screen controls are not shown on this touch screen');
     const from = { x: t.stick.x, y: t.stick.y };
@@ -280,31 +304,35 @@ async function phone() {
     srEvent('touch', 'thumb on the joystick, dragging right');
     await drag(from, t.stick.r * 0.9, 0, 1600, async () => { const s = touchState(); if (s.holding) heldSeen = true; moveSeen = Math.max(moveSeen, Math.hypot(...(s.move ?? [0, 0]))); });
     const b = sent.slice();
-    const dx = b[0] - a[0];
-    srEvent('moved', `right: ${dx.toFixed(1)} m`);
+    const dx = b[0] - a[0], dzRight = b[2] - a[2];
+    srEvent('moved', `right: ${dx.toFixed(1)} m east, ${dzRight.toFixed(1)} m north`);
     if (!heldSeen) throw new Error('the game never saw a thumb on the joystick');
     if (dx < 1.5) throw new Error(`dragging right moved the avatar only ${dx.toFixed(2)} m east (stick read ${moveSeen.toFixed(2)})`);
+    if (Math.abs(dx) < Math.abs(dzRight) * 2) throw new Error(`dragging right should move mostly east, but moved ${dx.toFixed(2)} m east / ${dzRight.toFixed(2)} m north`);
     srEvent('touch', 'dragging up the screen');
     await drag(from, 0, -t.stick.r * 0.9, 1600);
-    const d = sent.slice(), dz = d[2] - b[2];
-    srEvent('moved', `up: ${dz.toFixed(1)} m`);
+    const d = sent.slice(), dz = d[2] - b[2], dxUp = d[0] - b[0];
+    srEvent('moved', `up: ${dz.toFixed(1)} m north, ${dxUp.toFixed(1)} m east`);
     if (dz < 1.5) throw new Error(`dragging up moved the avatar only ${dz.toFixed(2)} m north`);
+    if (Math.abs(dz) < Math.abs(dxUp) * 2) throw new Error(`dragging up should move mostly north, but moved ${dz.toFixed(2)} m north / ${dxUp.toFixed(2)} m east`);
     await sleep(400);
     const e1 = sent.slice(); await sleep(500); const e2 = sent.slice();
     if (touchState().holding || Math.hypot(e2[0] - e1[0], e2[2] - e1[2]) > 0.05) throw new Error('the avatar kept walking after the thumb was lifted');
     sr.metrics.joystickEastM = Math.round(dx * 10) / 10; sr.metrics.joystickNorthM = Math.round(dz * 10) / 10;
-    return `right ${dx.toFixed(1)} m, up ${dz.toFixed(1)} m, stopped when let go`;
-  });
+    sr.metrics.joystickMoved = 1;
+    return `right ${dx.toFixed(1)} m, up ${dz.toFixed(1)} m (the way the thumb dragged), stopped when let go`;
+  })) return;
   sr.progress = 0.7;
 
-  // 4. The emote buttons: a second player is in the room and must see each emote.
+  // 4. Emote buttons: a second player must see a tapped emote (Wave is enough for the criterion; Hop and Spin too).
+  setPhoneScene('Phone-Emote');
   const bot = smoothBot = await openBotPlayer();
   await waitFor(() => (bot.ready === true || bot.status === 'online') && net.peers.has(bot.id), 15000, 'the second player to join the room');
   const seen = {};
   bot.onPose((id, st) => { if (id === net.id) { seen.e = st?.e; seen.n = st?.n; } });
   bot.pose([3, 1, 3], 0);
   await sleep(600);
-  await srCheck('Emote buttons on screen play emotes the other player sees', async () => {
+  await srCheck('An emote tapped on the phone shows on the other player\'s screen', async () => {
     const out = [];
     for (const k of [1, 2, 3]) {
       const b = touchState().emotes.find((x) => x.n === k);
@@ -323,8 +351,8 @@ async function phone() {
 }
 
 const baseScenarios = api.scenarios.bind(api);
-api.scenarios = () => [...baseScenarios(), { id: 'phone', title: 'Phone: the canvas fills the screen, join by touch, touch joystick, emote buttons', seconds: 90, tags: ['full', 'ui', 'phone'],
-  description: 'Meant for a phone-size page with touch (390x844). Checks the canvas is the whole viewport with no sideways scroll and is drawn at the screen\'s pixel ratio; taps the name field, types in the phone text box and taps Join; drags the on-screen joystick right and up and checks the avatar walked there and stopped when the thumb lifted; then taps the three emote buttons and checks a second player sees each emote. All with touch events on the canvas.' },
+api.scenarios = () => [...baseScenarios(), { id: 'phone', title: 'Phone: join by touch, joystick and emote at 390x844', seconds: 90, tags: ['full', 'ui', 'phone'],
+  description: 'Must run at Studio\'s phone size (390x844, touch). Fails if the viewport is not phone-sized. Checks the canvas fills the screen with no sideways scroll; taps Name, types in the phone text box and taps Join (reports joinMs); drags the on-screen joystick right then up and asserts the avatar moves that way (reports joystickMoved); taps Wave/Hop/Spin and checks a second player sees each. Scenes Phone-Join / Phone-Stick / Phone-Emote for phone-sized screenshots.' },
 { id: 'start-screen', title: 'Start screen: name, Join, status connecting/online, a failed join with its reason', seconds: 90, tags: ['full', 'ui'],
   description: 'Types a name on the start screen, presses Join and checks the status line goes connecting then online and the other players see the name; then refuses the ticket request, checks the status says Failed with the reason, and joins again.' },
 { id: 'smooth', title: 'Smooth remote avatar: moves every frame, no snapping at 150 ms latency, prediction capped at 250 ms then holds, Latency HUD and F3 debug line', seconds: 75, tags: ['full', 'netcode'],
