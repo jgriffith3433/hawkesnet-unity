@@ -411,10 +411,12 @@ api.scenarios = () => [...baseScenarios().map((s) => (s.id === 'smoke'
   description: 'Joins, opens a second player, walks/runs with real keys (remote ground speed from HawkesNetTrack), jumps with Space both ways (Extra j), plays emotes 1–3 both ways, and fails on window.__hawkesNet.anim quality probes: stuck-airborne >0.3s, state/motion mismatch, planted-foot slide. Scenes Anim-Walk / Anim-Jump / Anim-Emote.' },
 { id: 'two-players', title: 'Real browsers on one ?room= find each other, move, message, and pass animation quality probes', seconds: 90, tags: ['full', 'multiplayer', 'animation'],
   description: 'Two real browsers on one ?room= meet, move and trade messages (same as the shared net-playtest two-players), then each samples window.__hawkesNet.anim every frame: stuck-airborne, state/motion mismatch and foot-slide fail above thresholds on local and remote characters.' },
+{ id: 'nameplates', title: 'World-space nameplates: never mirrored on a 360 orbit, readable on phone, hidden behind a wall', seconds: 75, tags: ['full', 'ui', 'quality'],
+  description: 'Joins, opens a second player, waits for window.__hawkesNet.names: occlusion probe (hid behind a wall then shown), a dedicated probe-camera 360 orbit with mirroredFrames=0, every plate scale positive, and screenPx tall enough to read on a 390 px phone. Scenes Names-Meet / Names-Orbit / Names-Occlude for screenshots of unmirrored text.' },
 { id: 'page', title: 'Loading screen (progress, fade, phone fit), playtest hook while loading, demo-root.json, load error card', seconds: 30, tags: ['smoke', 'ui'],
   description: 'Checks the inline stub put window.hawkesPlaytest up before Unity finished (within 1 s of page start), that ./demo-root.json answers so a deeper path can relocate here, and that a load failure shows the plain error card (via the page helper, same card ?failLoad=1 uses).' }];
 // The scenarios played here rather than by net-playtest.mjs: their own run, panel and report.
-const SIDE = ['start-screen', 'smooth', 'crowd', 'phone', 'page', 'humanoid', 'anim-sync', 'two-players'];
+const SIDE = ['start-screen', 'smooth', 'crowd', 'phone', 'page', 'humanoid', 'anim-sync', 'two-players', 'nameplates'];
 
 let sr = null; // the start-screen run
 const r1 = (n) => Math.round(n * 10) / 10;
@@ -1122,6 +1124,79 @@ async function humanoid() {
   sr.progress = 1;
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// "nameplates": world-space names face the camera the right way (quality rule 1), stay readable, hide behind walls.
+const namesReport = () => globalThis.__hawkesNet?.names ?? null;
+async function nameplates() {
+  sr.state.scene = 'Names-Meet';
+  srEvent('scene', 'Names-Meet');
+  if (!await srCheck('Connected to Hawkes Net from the start screen', async () => {
+    await joinFromStartScreen();
+    if (!online()) throw new Error('the room did not come online after pressing Join');
+    return 'online';
+  })) return;
+  sr.progress = 0.15;
+  const net = slot().net;
+  await waitFor(() => sent, 5000, 'the Unity player to send its place');
+
+  if (!await srCheck('A second player joined so a remote nameplate exists', async () => {
+    smoothBot = await openBotPlayer();
+    await waitFor(() => (smoothBot.ready === true || smoothBot.status === 'online') && net.peers.has(smoothBot.id), 15000, 'both players to see each other');
+    // Stand the bot in front of the Unity camera so the name is in the footage.
+    let at = [sent[0] + 2.5, AVATAR_Y, sent[2] + 1.5];
+    smoothTick = setInterval(() => { try { smoothBot.pose(at, Math.PI); } catch { /* left */ } }, 50);
+    await waitFor(() => (namesReport()?.plates?.length ?? 0) >= 1, 10000, 'window.__hawkesNet.names to list a plate');
+    return `plates=${namesReport().plates.length}`;
+  })) return;
+  sr.progress = 0.35;
+
+  sr.state.scene = 'Names-Occlude';
+  srEvent('scene', 'Names-Occlude');
+  await srCheck('Name behind a wall does not show through it', async () => {
+    await waitFor(() => namesReport()?.occlusionDone, 20000, 'the Unity occlusion probe (names.occlusionDone)');
+    const n = namesReport();
+    sr.metrics.occlusionHiddenOk = n.occlusionHiddenOk ? 1 : 0;
+    sr.metrics.occlusionShownOk = n.occlusionShownOk ? 1 : 0;
+    if (!n.occlusionHiddenOk) throw new Error(`quality.text-facing: name stayed visible through a wall (${n.occlusionDetail || 'no detail'})`);
+    if (!n.occlusionShownOk) throw new Error(`name did not come back when the wall was cleared (${n.occlusionDetail || 'no detail'})`);
+    srEvent('occlusion', n.occlusionDetail || 'ok');
+    return n.occlusionDetail || 'hid then shown';
+  });
+  sr.progress = 0.55;
+
+  sr.state.scene = 'Names-Orbit';
+  srEvent('scene', 'Names-Orbit');
+  // Hold still while the dedicated probe camera orbits 360° (Unity does not move the follow cam).
+  await sleep(800); // a still for the meet screenshot with names readable
+  await srCheck('Nameplates stay unmirrored for a full 360 camera orbit', async () => {
+    await waitFor(() => namesReport()?.orbitDone, 20000, 'the Unity nameplate orbit (names.orbitDone)');
+    const n = namesReport();
+    sr.metrics.nameOrbitFrames = n.orbitFrames ?? 0;
+    sr.metrics.nameMirroredFrames = n.mirroredFrames ?? 0;
+    if ((n.orbitFrames ?? 0) < 30) throw new Error(`orbit only ran ${n.orbitFrames} frames`);
+    if ((n.mirroredFrames ?? 0) > 0) throw new Error(`quality.text-mirrored: ${n.mirroredFrames} orbit frames had mirrored name text`);
+    const bad = (n.plates || []).find((p) => p.mirrored || (p.scale && (p.scale[0] < 0 || p.scale[1] < 0 || p.scale[2] < 0)));
+    if (bad) throw new Error(`quality.text-mirrored: plate "${bad.text}" mirrored or negative scale ${JSON.stringify(bad.scale)}`);
+    srEvent('orbit', `frames=${n.orbitFrames} mirrored=0 plates=${(n.plates || []).length}`);
+    return `orbit ${n.orbitFrames} frames, mirroredFrames=0`;
+  });
+  sr.progress = 0.8;
+
+  await srCheck('Names stay readable above the head on a phone-sized short edge', async () => {
+    const n = namesReport();
+    const plates = n?.plates || [];
+    if (!plates.length) throw new Error('no nameplates reported');
+    const minPx = Math.min(...plates.map((p) => Number(p.screenPx) || 0));
+    sr.metrics.nameScreenPx = r1(minPx);
+    // 390 px phone short edge × PhoneScreenHeightFrac 0.062 ≈ 24 px; desktop frac 0.045 on 600 ≈ 27 px.
+    if (minPx < 14) throw new Error(`name screen height ${minPx}px is too small to read (need ≥14 px on the short edge)`);
+    if (n.phone && minPx < 18) throw new Error(`on a phone, name screen height ${minPx}px is under 18 px`);
+    srEvent('readable', `min screenPx=${minPx}${n.phone ? ' (phone)' : ''}`);
+    return `min screenPx=${minPx}`;
+  });
+  sr.progress = 1;
+}
+
 // "page": the WebGL template's early hook, demo-root.json marker, and plain error card (no Join / no second player).
 async function page() {
   sr.state.scene = 'Page';
@@ -1210,10 +1285,11 @@ api.start = async (id, options = {}) => {
       : id === 'anim-sync' ? animSync()
       : id === 'two-players' ? twoPlayersUnity()
       : id === 'phone' ? phone()
+      : id === 'nameplates' ? nameplates()
       : id === 'page' ? page()
       : startScreen());
   } catch (e) { sr.problems.push({ severity: 'bug', message: `bot error: ${e?.message ?? e}` }); }
-  finally { if (id === 'smooth' || id === 'crowd' || id === 'humanoid' || id === 'anim-sync' || id === 'phone') await smoothEnd(); }
+  finally { if (id === 'smooth' || id === 'crowd' || id === 'humanoid' || id === 'anim-sync' || id === 'phone' || id === 'nameplates') await smoothEnd(); }
   if (mine !== sr) return;
   mine.done = true; mine.seconds = srNow();
   mine.state.status = mine.lines.length && mine.lines.every((l) => l.ok) ? 'won' : 'lost';

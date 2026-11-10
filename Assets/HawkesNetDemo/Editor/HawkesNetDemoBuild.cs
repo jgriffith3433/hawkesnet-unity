@@ -70,6 +70,9 @@ namespace Hawkes.Demo.Editor
         static void Build(string outDir, bool quit)
         {
             IncludeShader("Standard");
+            // Nameplates (HawkesNetNamePlate): TextMesh + translucent Quad, built at run time — keep their shaders.
+            IncludeShader("Sprites/Default");
+            IncludeShader("GUI/Text Shader");
             // Bake the RobotExpressive humanoid + Animator into package Resources before the player build
             // (cloud batchmode does not run InitializeOnLoad delayCalls in time).
             if (!Hawkes.Editor.HawkesNetAvatarBake.Ensure())

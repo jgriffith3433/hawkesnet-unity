@@ -13,15 +13,18 @@ product). Exit: Leave / Esc back to the Join form.
 - **Banner N**: a freestanding north placard on the Join-facing wall line (base on the ground, not hung in air).
 
 ## Who lives here
-Tinted **RobotExpressive** humanoids (Tomás Laulhé / three.js, CC0), one per player. Each keeps a colour and a name.
-Routines: idle when still; walk/run from ground speed; Space jumps; keys 1–3 wave / hop / spin. Remotes mirror that
-from HawkesNetTrack's smoothed velocity and the pose Extra (`e`/`n` emotes, `j` jumps), not from raw packets.
+Tinted **RobotExpressive** humanoids (Tomás Laulhé / three.js, CC0), one per player. Each keeps a colour and a name
+on a world-space nameplate above the head (soft dark plate, camera-copy billboard, hidden behind walls). Routines:
+idle when still; walk/run from ground speed; Space jumps; keys 1–3 wave / hop / spin. Remotes mirror that from
+HawkesNetTrack's smoothed velocity and the pose Extra (`e`/`n` emotes, `j` jumps), not from raw packets.
 
 ## What happens
 Interactions: walk together, soft push-apart when too close, jump the ramp/step, trade emotes and jumps so every
 screen plays the same clip. Events: another player joining (name + colour appear), latency HUD when remotes are
 drawn behind. Ambient: the arena itself (ground, walls, ramp, step). Over time: colours resolve if two players clash.
 Smoke playtest runs a scene audit (ground contact, z-fight, inside-out, camera orbit) through the jslib bridge.
+The `nameplates` playtest orbits a probe camera 360° around a remote and checks names never read mirrored, stay
+readable on a phone, and vanish when occluded.
 
 ## Story beats
 1. Join — type a name, enter the arena (gameplay, not a text dump).

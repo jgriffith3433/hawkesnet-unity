@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
+using Hawkes;
 
 namespace Hawkes.Samples
 {
@@ -45,6 +46,7 @@ namespace Hawkes.Samples
         {
             public Transform Body;
             public Animator Animator;
+            public HawkesNetNamePlate NamePlate;
             public Color Color = Color.gray;
             public bool HasColor;
             public int Seen = -1;
@@ -66,7 +68,7 @@ namespace Hawkes.Samples
         readonly Dictionary<string, View> views = new Dictionary<string, View>();
         readonly Style style = new Style();
         readonly StringBuilder animBuf = new StringBuilder(512);
-        GUIStyle nameStyle, bubbleStyle, hudStyle;
+        GUIStyle bubbleStyle, hudStyle;
 
         static Material MakeMaterial(Color color)
         {
@@ -152,9 +154,14 @@ namespace Hawkes.Samples
             touch.StartScreen = start;
             gameObject.SetActive(true);
 
+            // World-space name above the head (quality rule 1): camera-copy billboard, soft plate, occlusion.
+            me.NamePlate = HawkesNetNamePlate.Attach(player, avatars.PlayerName + " (you)", me.Color);
+
             // Scene audit (quality rules 2/3/4/11): publish to window.__hawkesNet.scene for smoke.
             // Uses a dedicated probe camera so the player's follow cam never snaps.
             StartCoroutine(RunSceneAudit(cam));
+            if (HawkesNetLobby.Query("playtest") == "nameplates")
+                StartCoroutine(RunNamePlateProbes(cam));
         }
 
         System.Collections.IEnumerator RunSceneAudit(Camera gameplayCam)
@@ -169,6 +176,32 @@ namespace Hawkes.Samples
             // Inside the walls (ArenaHalf 12): radius 10 / height 5 clears posts and the banner.
             yield return HawkesNetSceneAudit.Orbit(new Vector3(0f, 1.2f, 0f), 10f, 5f, near, report,
                 () => HawkesNet.ShowedScene(HawkesNetSceneAudit.ToJson(report)));
+        }
+
+        /// <summary>
+        /// Nameplates playtest: occlusion hide/show, then a 360° probe-camera orbit that must never mirror text.
+        /// Publishes <c>window.__hawkesNet.names</c> for the bot (and for phone screenPx).
+        /// </summary>
+        System.Collections.IEnumerator RunNamePlateProbes(Camera gameplayCam)
+        {
+            // Wait until a remote is in the room so the orbit circles another player (acceptance: remote name).
+            float wait = 0f;
+            Transform remote = null;
+            while (wait < 25f)
+            {
+                foreach (var kv in avatars.Remotes)
+                {
+                    if (kv.Value.Object && kv.Value.Object.activeSelf) { remote = kv.Value.Object.transform; break; }
+                }
+                if (remote != null) break;
+                wait += Time.unscaledDeltaTime;
+                yield return null;
+            }
+            if (me.NamePlate != null)
+                yield return HawkesNetNamePlate.ProbeOcclusion(me.NamePlate, gameplayCam);
+            var around = remote != null ? remote : player;
+            float near = gameplayCam != null ? gameplayCam.nearClipPlane : HawkesNetSceneAudit.MinNearClip;
+            yield return HawkesNetNamePlate.OrbitAndCheck(around, 4.5f, 2.2f, near);
         }
 
         static float UrlNumber(string name)
@@ -213,6 +246,7 @@ namespace Hawkes.Samples
             me.Color = c; me.HasColor = true;
             HawkesNetAvatarVisual.SetTint(player, c);
             style.c = "#" + ColorUtility.ToHtmlStringRGB(c);
+            if (me.NamePlate != null) me.NamePlate.Set(avatars != null ? avatars.PlayerName + " (you)" : "You", c);
         }
 
         void Play(View v, int emote)
@@ -291,6 +325,8 @@ namespace Hawkes.Samples
             }
             me.GroundSpeed = me.Grounded ? moveAmt : 0f;
             Animate(me);
+            if (me.NamePlate != null)
+                me.NamePlate.Set(avatars.PlayerName + " (you)", me.Color);
 
             var room = avatars.Lobby != null ? avatars.Lobby.Room : null;
             var seenHues = new List<float>();
@@ -303,6 +339,14 @@ namespace Hawkes.Samples
                     v.Body = r.Object.transform.GetChild(0);
                     v.Animator = HawkesNetAvatarVisual.GetAnimator(r.Object.transform);
                 }
+                if (r.Object)
+                {
+                    string plateName = r.Name;
+                    if (plateName.Length == 0 && room != null) room.Peers.TryGetValue(kv.Key, out plateName);
+                    if (string.IsNullOrEmpty(plateName)) plateName = "Player";
+                    if (v.NamePlate == null) v.NamePlate = HawkesNetNamePlate.Attach(r.Object.transform, plateName, v.HasColor ? v.Color : Color.white);
+                    else v.NamePlate.Set(plateName, v.HasColor ? v.Color : Color.white);
+                }
                 Style s = null;
                 if (r.Extra.Length > 0) { try { s = JsonUtility.FromJson<Style>(r.Extra); } catch (Exception) { /* not ours */ } }
                 if (s == null) continue;
@@ -314,6 +358,13 @@ namespace Hawkes.Samples
                         HawkesNetAvatarVisual.SetTint(r.Object.transform, col);
                     }
                     seenHues.Add(HueOf(col));
+                    if (v.NamePlate != null)
+                    {
+                        string plateName = r.Name;
+                        if (plateName.Length == 0 && room != null) room.Peers.TryGetValue(kv.Key, out plateName);
+                        if (string.IsNullOrEmpty(plateName)) plateName = "Player";
+                        v.NamePlate.Set(plateName, col);
+                    }
                 }
                 if (v.Seen < 0) v.Seen = s.n;
                 else if (s.n != v.Seen) { v.Seen = s.n; Play(v, s.e); }
@@ -491,40 +542,29 @@ namespace Hawkes.Samples
             if (Event.current.type != EventType.Repaint) return;
             var cam = Camera.main;
             if (!cam) return;
-            if (nameStyle == null)
-            {
-                nameStyle = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold };
-                bubbleStyle = new GUIStyle(nameStyle);
-            }
-            nameStyle.fontSize = Mathf.RoundToInt(15f * ui);
+            // Names are world-space HawkesNetNamePlate; only emote bubbles stay in IMGUI.
+            if (bubbleStyle == null)
+                bubbleStyle = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold };
             bubbleStyle.fontSize = Mathf.RoundToInt(17f * ui);
-            Label(cam, player, avatars.PlayerName + " (you)", me);
+            EmoteBubble(cam, player, me);
             foreach (var kv in avatars.Remotes)
             {
                 var r = kv.Value;
                 if (!r.Object || !r.Object.activeSelf || !views.TryGetValue(kv.Key, out var v)) continue;
-                string name = r.Name;
-                if (name.Length == 0 && lobby.Room != null) lobby.Room.Peers.TryGetValue(kv.Key, out name);
-                Label(cam, r.Object.transform, string.IsNullOrEmpty(name) ? "Player" : name, v);
+                EmoteBubble(cam, r.Object.transform, v);
             }
         }
 
-        void Label(Camera cam, Transform who, string text, View v)
+        void EmoteBubble(Camera cam, Transform who, View v)
         {
+            float since = Time.time - v.Started;
+            if (v.Emote <= 0 || since >= BubbleSeconds) return;
             var screen = cam.WorldToScreenPoint(who.position + Vector3.up * HawkesNetAvatarVisual.LabelHeight);
             if (screen.z <= 0f) return;
             float x = screen.x, y = Screen.height - screen.y, ui = Ui;
             var old = GUI.color;
-            GUI.color = new Color(0f, 0f, 0f, 0.85f);
-            GUI.Label(new Rect(x - 101f * ui, y - 9f * ui, 200f * ui, 24f * ui), text, nameStyle);
-            GUI.color = Color.Lerp(Color.white, v.Color, 0.6f);
-            GUI.Label(new Rect(x - 100f * ui, y - 10f * ui, 200f * ui, 24f * ui), text, nameStyle);
-            float since = Time.time - v.Started;
-            if (v.Emote > 0 && since < BubbleSeconds)
-            {
-                GUI.color = new Color(1f, 1f, 1f, Mathf.Clamp01((BubbleSeconds - since) * 2f));
-                GUI.Label(new Rect(x - 100f * ui, y - (36f + Mathf.Min(since, 0.4f) * 20f) * ui, 200f * ui, 26f * ui), EmoteSays[v.Emote] + " (" + EmoteNames[v.Emote] + ")", bubbleStyle);
-            }
+            GUI.color = new Color(1f, 1f, 1f, Mathf.Clamp01((BubbleSeconds - since) * 2f));
+            GUI.Label(new Rect(x - 100f * ui, y - (36f + Mathf.Min(since, 0.4f) * 20f) * ui, 200f * ui, 26f * ui), EmoteSays[v.Emote] + " (" + EmoteNames[v.Emote] + ")", bubbleStyle);
             GUI.color = old;
         }
     }
