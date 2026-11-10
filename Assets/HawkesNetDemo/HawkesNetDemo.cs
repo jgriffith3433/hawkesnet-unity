@@ -8,13 +8,14 @@ using UnityEngine;
 namespace Hawkes.Demo
 {
     /// <summary>
-    /// The smallest multiplayer scene with some personality: a capsule you walk with WASD (or the arrow keys, or a touch joystick on a phone), a camera
-    /// behind it, and a capsule for every other player in the area's shared room, through HawkesNetAvatars. Each player
-    /// has a colour and a floating name, and three emotes on the keys 1, 2 and 3 (or three buttons on a phone) (wave, hop, spin) that the others see.
-    /// The colour and the emote ride in the pose's Extra values (HawkesNetAvatars.Extra / Remote.Extra), so any game can
-    /// do the same. Put it on an empty GameObject in an empty scene, set Project, build for WebGL and open two tabs.
-    /// The others are drawn smoothly whatever the connection (HawkesNetAvatars plays them through a HawkesNetTrack);
-    /// add ?lag=150 (and &amp;jitter=30) to the page's address to feel a slow one (HawkesNet.SimulatedLatency).
+    /// The smallest multiplayer scene with some personality: a tinted RobotExpressive humanoid you walk with WASD (or the
+    /// arrow keys, or a touch joystick on a phone), a camera behind it, and the same figure for every other player in the
+    /// area's shared room, through HawkesNetAvatars. Each player has a colour and a floating name, and three emotes on the
+    /// keys 1, 2 and 3 (or three buttons on a phone) (wave, hop, spin) that the others see. The colour and the emote ride
+    /// in the pose's Extra values (HawkesNetAvatars.Extra / Remote.Extra), so any game can do the same. Put it on an empty
+    /// GameObject in an empty scene, set Project, build for WebGL and open two tabs. The others are drawn smoothly
+    /// whatever the connection (HawkesNetAvatars plays them through a HawkesNetTrack); add ?lag=150 (and &amp;jitter=30)
+    /// to the page's address to feel a slow one (HawkesNet.SimulatedLatency).
     /// </summary>
     public sealed class HawkesNetDemo : MonoBehaviour
     {
@@ -28,7 +29,7 @@ namespace Hawkes.Demo
         public float TurnSpeed = 720f;
         [Tooltip("Half the side of the square arena (m): the ground and its edge walls are at plus and minus this.")]
         public float ArenaHalf = 12f;
-        [Tooltip("Closest two capsules may stand (m): nearer than this the local one is eased away, so they never z-fight.")]
+        [Tooltip("Closest two avatars may stand (m): nearer than this the local one is eased away (soft push-apart).")]
         public float MinGap = 0.6f;
         [Tooltip("How fast the local player is eased apart from another (m a second).")]
         public float SeparateSpeed = 3f;
@@ -41,19 +42,20 @@ namespace Hawkes.Demo
 
         static readonly string[] EmoteNames = { "", "wave", "hop", "spin" };
         static readonly string[] EmoteSays = { "", "Hello!", "Woo!", "Wheee!" };
-        static readonly float[] EmoteSeconds = { 0f, 1.4f, 1.0f, 0.9f };
+        static readonly float[] EmoteSeconds = { 0f, 1.9f, 0.8f, 3.4f }; // Wave / Jump / Dance clip lengths
         const float BubbleSeconds = 2.2f;
 
-        // One drawn player (you or another): its body to animate, its colour and the emote being played.
+        // One drawn player (you or another): its body / Animator, its colour and the emote being played.
         sealed class View
         {
             public Transform Body;
-            public Renderer[] Renderers = new Renderer[0];
+            public Animator Animator;
             public Color Color = Color.gray;
             public bool HasColor;
             public int Seen = -1; // the emote count last seen (-1: not yet, so the first one seen is only a baseline)
             public int Emote;
             public float Started = -100f;
+            public float GroundSpeed;
         }
 
         Transform player;
@@ -79,29 +81,9 @@ namespace Hawkes.Demo
             return m;
         }
 
-        // A player: an empty root (what HawkesNetAvatars moves) with a capsule body and a darker nose on the front, so a
-        // spin shows. The body is what emotes animate, so the camera on the root stays still.
-        static Transform MakeAvatar(string name, Color color)
-        {
-            var root = new GameObject(name).transform;
-            var body = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            body.name = "Body";
-            // CreatePrimitive adds a collider inside the engine, so a build that strips unused engine code (WebGL) drops
-            // the physics module unless managed code names these types ("Can't add component because class
-            // 'CapsuleCollider' doesn't exist!"). Naming them here keeps them; the scene moves by transform, so nothing
-            // needs the colliders.
-            Destroy(body.GetComponent<CapsuleCollider>());
-            body.transform.SetParent(root, false);
-            body.GetComponent<Renderer>().sharedMaterial = MakeMaterial(color);
-            var nose = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            nose.name = "Nose";
-            Destroy(nose.GetComponent<BoxCollider>());
-            nose.transform.SetParent(body.transform, false);
-            nose.transform.localPosition = new Vector3(0f, 0.55f, 0.45f);
-            nose.transform.localScale = new Vector3(0.3f, 0.2f, 0.3f);
-            nose.GetComponent<Renderer>().sharedMaterial = MakeMaterial(new Color(0.12f, 0.12f, 0.15f));
-            return root;
-        }
+        // A player: empty root (HawkesNetAvatars / camera) + Body child with the baked RobotExpressive humanoid
+        // (HawkesNetAvatarVisual) or a capsule stand-in when the Resources prefab was not baked yet.
+        static Transform MakeAvatar(string name, Color color) => HawkesNetAvatarVisual.Make(name, color);
 
         static Color Hue(float h) => Color.HSVToRGB(Mathf.Repeat(h, 1f), 0.65f, 0.95f);
         static float HueOf(Color c) { Color.RGBToHSV(c, out var h, out _, out _); return h; }
@@ -118,9 +100,10 @@ namespace Hawkes.Demo
             // You: a random colour (Update moves it off a colour someone else in the room already has).
             float hue = UnityEngine.Random.value;
             player = MakeAvatar("Player", Hue(hue));
-            player.position = new Vector3(UnityEngine.Random.Range(-4f, 4f), 1f, UnityEngine.Random.Range(-4f, 4f));
-            me.Body = player.GetChild(0);
-            me.Renderers = player.GetComponentsInChildren<Renderer>();
+            // Feet on the ground (root at y=0); the humanoid is fitted so its lowest point sits there.
+            player.position = new Vector3(UnityEngine.Random.Range(-4f, 4f), 0f, UnityEngine.Random.Range(-4f, 4f));
+            me.Body = player.childCount > 0 ? player.GetChild(0) : player;
+            me.Animator = HawkesNetAvatarVisual.GetAnimator(player);
             SetColor(Hue(hue));
 
             // Everyone else: a grey avatar, kept inactive as the template (each gets its own colour when its pose arrives).
@@ -194,7 +177,7 @@ namespace Hawkes.Demo
         void SetColor(Color c)
         {
             me.Color = c; me.HasColor = true;
-            foreach (var r in me.Renderers) if (r.gameObject.name == "Body") r.material.color = c;
+            HawkesNetAvatarVisual.SetTint(player, c);
             style.c = "#" + ColorUtility.ToHtmlStringRGB(c);
         }
 
@@ -202,6 +185,7 @@ namespace Hawkes.Demo
         {
             if (emote < 1 || emote >= EmoteNames.Length) return;
             v.Emote = emote; v.Started = Time.time;
+            if (v.Animator) HawkesNetAvatarVisual.PlayEmote(v.Animator, emote);
         }
 
         // F3 shows the detail line under the latency (how far behind others are drawn, how far one is predicted).
@@ -216,15 +200,19 @@ namespace Hawkes.Demo
             var move = typing ? Vector3.zero : new Vector3(Input.GetAxisRaw("Horizontal"), 0f, Input.GetAxisRaw("Vertical"));
             // The touch joystick walks like the keys do (a gentle push walks slower); the keys win when both are down.
             if (!typing && move.sqrMagnitude <= 0.01f && touch != null && touch.Move.sqrMagnitude > 0.0001f) move = new Vector3(touch.Move.x, 0f, touch.Move.y);
+            float moveAmt = 0f;
             if (move.sqrMagnitude > 0.01f)
             {
-                player.position += move.normalized * Speed * Mathf.Min(1f, move.magnitude) * Time.deltaTime;
+                moveAmt = Speed * Mathf.Min(1f, move.magnitude);
+                player.position += move.normalized * moveAmt * Time.deltaTime;
                 // Turn towards where it walks (not at once): the others see the same smooth turn.
                 player.rotation = Quaternion.RotateTowards(player.rotation, Quaternion.LookRotation(move), TurnSpeed * Time.deltaTime);
             }
-            // Two capsules never share a spot (they would z-fight): within MinGap of another player, ease away from it.
+            // Two avatars never share a spot (they would z-fight): within MinGap of another player, ease away from it.
             // Local only: the others do the same on their side, and the push syncs through the pose like any move.
+            // Uses each avatar's CapsuleCollider radius when present so the gap still fits the new humanoid collider.
             string selfId = avatars.Lobby != null && avatars.Lobby.Room != null ? avatars.Lobby.Room.Id : "";
+            float myRadius = AvatarRadius(player);
             foreach (var other in avatars.Remotes)
             {
                 var r = other.Value;
@@ -232,18 +220,19 @@ namespace Hawkes.Demo
                 var apart = player.position - r.Object.transform.position;
                 apart.y = 0f;
                 float gap = apart.magnitude;
-                if (gap >= MinGap) continue;
+                float need = Mathf.Max(MinGap, myRadius + AvatarRadius(r.Object.transform));
+                if (gap >= need) continue;
                 // On the very same spot there is no "away": each side picks one from the room id, opposite for the two.
                 var dir = gap > 0.001f ? apart / gap : Vector3.right;
                 if (gap <= 0.001f && string.CompareOrdinal(selfId, other.Key) < 0) dir = Vector3.left;
                 // Gentle: at least SeparateSpeed, and a share of what is left so walking into someone cannot pass through.
-                float deficit = MinGap - gap;
+                float deficit = need - gap;
                 player.position += dir * Mathf.Min(deficit, Mathf.Max(SeparateSpeed * Time.deltaTime, deficit * Mathf.Clamp01(12f * Time.deltaTime)));
             }
-            // The capsule stands on the ground (centre at 1 m, radius 0.5 m) and stays inside the walls, whatever the input.
+            // Feet on the ground (y = 0) and stay inside the walls, whatever the input.
             float limit = ArenaHalf - 0.5f;
             var p = player.position;
-            player.position = new Vector3(Mathf.Clamp(p.x, -limit, limit), 1f, Mathf.Clamp(p.z, -limit, limit));
+            player.position = new Vector3(Mathf.Clamp(p.x, -limit, limit), 0f, Mathf.Clamp(p.z, -limit, limit));
 
             // Emotes: 1 wave, 2 hop, 3 spin. Played here at once and sent with the next pose.
             for (int i = 1; i < EmoteNames.Length && !typing; i++)
@@ -259,6 +248,7 @@ namespace Hawkes.Demo
                 style.e = tapped; style.n++;
                 Play(me, tapped);
             }
+            me.GroundSpeed = moveAmt;
             Animate(me);
 
             var room = avatars.Lobby != null ? avatars.Lobby.Room : null;
@@ -270,7 +260,7 @@ namespace Hawkes.Demo
                 if (r.Object && v.Body == null && r.Object.transform.childCount > 0)
                 {
                     v.Body = r.Object.transform.GetChild(0);
-                    v.Renderers = r.Object.GetComponentsInChildren<Renderer>(true);
+                    v.Animator = HawkesNetAvatarVisual.GetAnimator(r.Object.transform);
                 }
                 Style s = null;
                 if (r.Extra.Length > 0) { try { s = JsonUtility.FromJson<Style>(r.Extra); } catch (Exception) { /* not ours: no style */ } }
@@ -280,13 +270,15 @@ namespace Hawkes.Demo
                     if (!v.HasColor || v.Color != col)
                     {
                         v.Color = col; v.HasColor = true;
-                        foreach (var rend in v.Renderers) if (rend && rend.gameObject.name == "Body") rend.material.color = col;
+                        HawkesNetAvatarVisual.SetTint(r.Object.transform, col);
                     }
                     seenHues.Add(HueOf(col));
                 }
                 // A new emote count: play it (the first count seen is only where this player already was).
                 if (v.Seen < 0) v.Seen = s.n;
                 else if (s.n != v.Seen) { v.Seen = s.n; Play(v, s.e); }
+                var vel = r.Velocity; vel.y = 0f;
+                v.GroundSpeed = vel.magnitude;
                 Animate(v);
             }
 
@@ -310,10 +302,21 @@ namespace Hawkes.Demo
             }
         }
 
-        // The emote's motion on the body (not the root, which the room and the camera move): wave rocks side to side,
-        // hop jumps twice, spin turns once around.
+        static float AvatarRadius(Transform who)
+        {
+            if (!who) return 0.35f;
+            var col = who.GetComponent<CapsuleCollider>();
+            return col != null ? Mathf.Max(0.2f, col.radius) : 0.35f;
+        }
+
+        // Animator locomotion + emote clips when the humanoid was baked; capsule stand-in keeps the old procedural motion.
         void Animate(View v)
         {
+            if (v.Animator && v.Animator.runtimeAnimatorController)
+            {
+                HawkesNetAvatarVisual.Tick(v.Animator, v.GroundSpeed);
+                return;
+            }
             if (!v.Body) return;
             float t = (Time.time - v.Started) / (v.Emote > 0 ? EmoteSeconds[v.Emote] : 1f);
             Vector3 pos = Vector3.zero; Quaternion rot = Quaternion.identity;
@@ -391,7 +394,7 @@ namespace Hawkes.Demo
         // The name floats above the head in the player's colour, with the emote's words above it for a moment.
         void Label(Camera cam, Transform who, string text, View v)
         {
-            var screen = cam.WorldToScreenPoint(who.position + Vector3.up * 1.5f);
+            var screen = cam.WorldToScreenPoint(who.position + Vector3.up * HawkesNetAvatarVisual.LabelHeight);
             if (screen.z <= 0f) return;
             float x = screen.x, y = Screen.height - screen.y, ui = Ui;
             var old = GUI.color;

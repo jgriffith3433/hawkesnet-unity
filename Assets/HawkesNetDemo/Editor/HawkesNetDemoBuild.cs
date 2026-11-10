@@ -70,6 +70,10 @@ namespace Hawkes.Demo.Editor
         static void Build(string outDir, bool quit)
         {
             IncludeShader("Standard");
+            // Bake the RobotExpressive humanoid + Animator into package Resources before the player build
+            // (cloud batchmode does not run InitializeOnLoad delayCalls in time).
+            if (!Hawkes.Editor.HawkesNetAvatarBake.Ensure())
+                throw new Exception("HawkesNetAvatarBake.Ensure failed: Avatars humanoid Resources were not built");
             MakeScene();
             // Custom page: early window.hawkesPlaytest stub, relative Build/ paths, demo-root.json relocation.
             PlayerSettings.WebGL.template = "PROJECT:HawkesNetDemo";
