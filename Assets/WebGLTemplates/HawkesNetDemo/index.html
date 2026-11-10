@@ -19,16 +19,29 @@
       touch-action: none;
     }
     #unity-loading-bar {
-      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-      background: rgba(11, 13, 18, 0.92); z-index: 2; pointer-events: none;
+      position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 14px; text-align: center; opacity: 1; transition: opacity 0.6s ease; pointer-events: none;
+      padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+      background: radial-gradient(ellipse at 50% 35%, #172036 0%, #0b0d12 70%);
     }
+    #unity-loading-bar.fade { opacity: 0; }
     #unity-loading-bar[hidden] { display: none; }
+    .hn-logo { width: clamp(56px, 16vmin, 88px); height: clamp(56px, 16vmin, 88px); }
+    .hn-title { margin: 0; font-size: clamp(1.3rem, 6vmin, 2rem); font-weight: 700; letter-spacing: 0.02em; color: #fff; }
+    .hn-title span { color: #5b8cff; }
     #unity-progress-bar-empty {
       width: min(280px, 70vw); height: 8px; background: rgba(255,255,255,0.12);
       border-radius: 4px; overflow: hidden;
     }
     #unity-progress-bar-full {
-      width: 0%; height: 100%; background: #5b8cff; transition: width 0.15s linear;
+      width: 0%; height: 100%; background: linear-gradient(90deg, #5b8cff, #8fb0ff); transition: width 0.15s linear;
+    }
+    .hn-pct { font: 12px/1 ui-monospace, Menlo, monospace; color: #8d97a8; }
+    .hn-tip { margin: 6px 0 0; max-width: 32ch; color: #b7bec9; font-size: 0.95rem; }
+    @media (orientation: landscape) and (max-height: 500px) {
+      #unity-loading-bar { gap: 6px; }
+      .hn-logo { width: 44px; height: 44px; }
+      .hn-tip { margin: 0; }
     }
     #hawkes-error-card {
       display: none; position: fixed; inset: 0; z-index: 10;
@@ -100,9 +113,13 @@
   <div id="unity-container">
     <canvas id="unity-canvas" width={{{ WIDTH }}} height={{{ HEIGHT }}} tabindex="-1"></canvas>
     <div id="unity-loading-bar">
+      <svg class="hn-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="none" stroke="#5b8cff" stroke-width="3" stroke-linecap="round"><circle cx="32" cy="12" r="5" fill="#5b8cff"/><circle cx="12" cy="46" r="5" fill="#5b8cff"/><circle cx="52" cy="46" r="5" fill="#5b8cff"/><path d="M32 17 15 42M32 17l17 25M17 46h30"/></g></svg>
+      <h1 class="hn-title">Hawkes <span>Net</span></h1>
       <div id="unity-progress-bar-empty" role="progressbar" aria-label="Loading" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
         <div id="unity-progress-bar-full"></div>
       </div>
+      <div class="hn-pct" id="hn-pct">0%</div>
+      <p class="hn-tip">Open a second tab to see multiplayer</p>
     </div>
     <div id="unity-warning"></div>
   </div>
@@ -183,6 +200,10 @@
         var v = Math.max(0, Math.min(1, Number(p) || 0));
         if (stub && stub.setProgress) stub.setProgress(v);
         if (progressBarFull) progressBarFull.style.width = (100 * v) + '%';
+        var pct = document.getElementById('hn-pct');
+        if (pct) pct.textContent = Math.round(100 * v) + '%';
+        var ls = window.__hawkesLoading;
+        if (ls && ls.samples[ls.samples.length - 1] !== v) ls.samples.push(v);
         if (progressBarEmpty) progressBarEmpty.setAttribute('aria-valuenow', String(Math.round(100 * v)));
       }
 
@@ -256,6 +277,7 @@
         document.getElementsByTagName('head')[0].appendChild(meta);
       }
 
+      window.__hawkesLoading = { samples: [], fadedAt: null, hiddenAt: null };
       setProgress(0);
 
       var script = document.createElement('script');
@@ -266,8 +288,10 @@
           return;
         }
         createUnityInstance(canvas, config, setProgress).then(function () {
-          loadingBar.hidden = true;
           setProgress(1);
+          window.__hawkesLoading.fadedAt = performance.now();
+          loadingBar.classList.add('fade');
+          setTimeout(function () { loadingBar.hidden = true; window.__hawkesLoading.hiddenAt = performance.now(); }, 650);
         }).catch(function (message) {
           onLoadFailure(message);
         });
