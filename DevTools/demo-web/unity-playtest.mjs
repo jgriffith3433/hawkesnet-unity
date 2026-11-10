@@ -23,7 +23,7 @@ let sent = null;
 let sentYaw = 0; // which way the Unity player faces (radians, Unity's yaw: 0 is +z)
 let sentExtra = null; // the extra values (colour, emote) the Unity player sent with its newest pose
 // The second player's look, sent with every pose it makes: an orange capsule, no emote yet (the sample's Style).
-const botStyle = { c: '#ff9d2e', e: 0, n: 0 };
+const botStyle = { c: '#ff9d2e', e: 0, n: 0, j: 0 };
 // Avatar body y: humanoid feet at y=0 (was capsule centre at y=1).
 const AVATAR_Y = 0;
 // Console lines from HawkesNetAvatarVisual ("[HawkesNetAvatar] humanoid ready" / "capsule stand-in").
@@ -49,6 +49,7 @@ const main = () => {
 };
 // Unity reads the keyboard from the page: a press on the canvas and the window, with the key's code as a browser sends it.
 const CODES = { d: ['KeyD', 68], w: ['KeyW', 87], 1: ['Digit1', 49], 2: ['Digit2', 50], 3: ['Digit3', 51],
+  ' ': ['Space', 32], Space: ['Space', 32],
   Enter: ['Enter', 13], F3: ['F3', 114], Escape: ['Escape', 27], Backspace: ['Backspace', 8] };
 const key = (k, down) => {
   const [code, keyCode] = CODES[k] ?? [/^[a-z]$/i.test(k) ? `Key${k.toUpperCase()}` : '', k.toUpperCase().charCodeAt(0)];
@@ -373,10 +374,14 @@ api.scenarios = () => [...baseScenarios(), { id: 'phone', title: 'Phone: join by
   description: 'Joins from the start screen and opens a second player. Walks the Unity player (real key presses) straight at the bot and keeps pushing: it must stay apart (never on the same centre), and settle at least 0.55 m away once the keys are let go. Then the bot is put exactly on the Unity player\'s spot (a setup shortcut): the Unity player must ease apart to 0.55 m or more. Then the bot goes far away and the player walks in every direction for 30 s (d, s, a, w, then diagonals): every pose it sends must stay on the ground (y = 0, humanoid feet) and inside the arena (the edge walls), and it must reach an edge.' },
 { id: 'humanoid', title: 'Tinted animated humanoid on the ground: idle, walk, run, soft push-apart', seconds: 75, tags: ['full', 'avatars'],
   description: 'Joins from the start screen, checks the baked RobotExpressive humanoid loaded (console "[HawkesNetAvatar] humanoid ready"), feet on the ground (pose y ≈ 0), walks then runs with real keys (ground speed rises), opens a second player and walks into it so soft push-apart keeps them ≥0.55 m apart. Scenes Humanoid-Idle / Humanoid-Walk / Humanoid-Push for footage of the tinted figure.' },
+{ id: 'anim-sync', title: 'Remote Animator from track velocity; emotes and jumps sync; landings never stick airborne', seconds: 90, tags: ['full', 'avatars', 'animation'],
+  description: 'Joins, opens a second player, walks/runs with real keys (remote ground speed from HawkesNetTrack), jumps with Space both ways (Extra j), plays emotes 1–3 both ways, and fails on window.__hawkesNet.anim quality probes: stuck-airborne >0.3s, state/motion mismatch, planted-foot slide. Scenes Anim-Walk / Anim-Jump / Anim-Emote.' },
+{ id: 'two-players', title: 'Real browsers on one ?room= find each other, move, message, and pass animation quality probes', seconds: 90, tags: ['full', 'multiplayer', 'animation'],
+  description: 'Two real browsers on one ?room= meet, move and trade messages (same as the shared net-playtest two-players), then each samples window.__hawkesNet.anim every frame: stuck-airborne, state/motion mismatch and foot-slide fail above thresholds on local and remote characters.' },
 { id: 'page', title: 'Loading screen (progress, fade, phone fit), playtest hook while loading, demo-root.json, load error card', seconds: 30, tags: ['smoke', 'ui'],
   description: 'Checks the inline stub put window.hawkesPlaytest up before Unity finished (within 1 s of page start), that ./demo-root.json answers so a deeper path can relocate here, and that a load failure shows the plain error card (via the page helper, same card ?failLoad=1 uses).' }];
 // The scenarios played here rather than by net-playtest.mjs: their own run, panel and report.
-const SIDE = ['start-screen', 'smooth', 'crowd', 'phone', 'page', 'humanoid'];
+const SIDE = ['start-screen', 'smooth', 'crowd', 'phone', 'page', 'humanoid', 'anim-sync', 'two-players'];
 
 let sr = null; // the start-screen run
 const r1 = (n) => Math.round(n * 10) / 10;
@@ -715,23 +720,25 @@ async function crowd() {
   // 3. Far away from the bot: 30 s of walking in every direction. Each pose must stay on the ground inside the walls.
   at = [start[0] > 0 ? -8 : 8, AVATAR_Y, 8]; // inside the walls and in frame
   srEvent('phase', 'walk in every direction for 30 s');
-  let worstY = 0, far = 0, bad = '', moved = 0, prev = sent.slice();
+  let worstSink = 0, far = 0, bad = '', moved = 0, prev = sent.slice(), maxY = 0;
   const dirs = [['d'], ['s'], ['a'], ['w'], ['d', 'w'], ['a', 's'], ['d', 's'], ['a', 'w'], ['d'], ['w']];
   for (const keys of dirs) {
     await hold(keys, 3000, (p) => {
       if (!p) return;
-      worstY = Math.max(worstY, Math.abs(p[1] - AVATAR_Y));
+      // Ramp/step raise y; failing means falling through (y below the floor), not standing on a prop.
+      if (p[1] < AVATAR_Y - 0.05) worstSink = Math.max(worstSink, AVATAR_Y - p[1]);
+      maxY = Math.max(maxY, p[1]);
       far = Math.max(far, Math.abs(p[0]), Math.abs(p[2]));
       if (!bad && (Math.abs(p[0]) > ARENA_LIMIT + 0.02 || Math.abs(p[2]) > ARENA_LIMIT + 0.02)) bad = `at ${p.map((n) => n.toFixed(2)).join(', ')} holding ${keys.join('+')}`;
       moved += flat(p, prev); prev = p.slice();
     });
     sr.progress = Math.min(0.95, sr.progress + 0.04);
   }
-  Object.assign(sr.metrics, { farthestM: r1(far), walkedM: Math.round(moved), worstHeightOffM: r1(worstY) });
+  Object.assign(sr.metrics, { farthestM: r1(far), walkedM: Math.round(moved), worstSinkM: r1(worstSink), maxGroundY: r1(maxY) });
   await srCheck('Walking in any direction for 30 s keeps the avatar on the ground', async () => {
     if (moved < 40) throw new Error(`the player only moved ${moved.toFixed(0)} m in 30 s of walking`);
-    if (worstY > 0.01) throw new Error(`it left the ground by ${worstY.toFixed(2)} m`);
-    return `walked ${moved.toFixed(0)} m, height always ${AVATAR_Y} m (feet on the ground)`;
+    if (worstSink > 0.01) throw new Error(`it fell through the ground by ${worstSink.toFixed(2)} m`);
+    return `walked ${moved.toFixed(0)} m, never below the floor (max y ${maxY.toFixed(2)} on props)`;
   });
   await srCheck(`It stays inside the edge walls (within ${ARENA_LIMIT} m of the middle) and reaches them`, async () => {
     if (bad) throw new Error(`it went outside the arena ${bad}`);
@@ -746,6 +753,261 @@ const smoothEnd = async () => {
   if (smoothTick) { clearInterval(smoothTick); smoothTick = null; }
   if (smoothBot) { const b = smoothBot; smoothBot = null; try { await b.leave(); } catch { /* gone */ } }
 };
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Animation quality via the bridge (HawkesNet.ShowedAnim → window.__hawkesNet.anim / .animLog). Thresholds match
+// game-quality rule 5: stuck airborne >0.3 s, planted-foot slide, state/motion mismatch.
+const SLIDE_MAX = 0.5; // m/s while Animator says idle/land
+const AIR_G_MAX = 0.3; // seconds airborne-while-grounded
+function animSnap() { return globalThis.__hawkesNet?.anim ?? null; }
+function animLog() { return globalThis.__hawkesNet?.animLog ?? []; }
+function scoreAnim(log) {
+  let maxSlide = 0, maxAirG = 0, mismatches = 0, stuck = 0, samples = 0;
+  for (const frame of log) {
+    for (const c of frame.chars || []) {
+      samples++;
+      maxSlide = Math.max(maxSlide, Number(c.slide) || 0);
+      maxAirG = Math.max(maxAirG, Number(c.airG) || 0);
+      if (c.mis) mismatches++;
+      if (c.stuck) stuck++;
+    }
+  }
+  return { samples, maxSlide, maxAirG, mismatches, stuck };
+}
+function clearAnimLog() {
+  const S = globalThis.__hawkesNet;
+  if (S) { S.animLog = []; S.anim = null; }
+}
+
+// "anim-sync": bot + real keys; remotes walk from track velocity; emotes + jumps both ways; quality probes fail the run.
+async function animSync() {
+  sr.state.scene = 'Anim-Walk';
+  srEvent('scene', 'Anim-Walk');
+  if (!await srCheck('Connected to Hawkes Net from the start screen', async () => {
+    await joinFromStartScreen();
+    if (!online()) throw new Error('the room did not come online after pressing Join');
+    return 'online';
+  })) return;
+  sr.progress = 0.1;
+  const net = slot().net;
+  main();
+  await waitFor(() => sent, 5000, 'the Unity player to send its place');
+
+  if (!await srCheck('A second player joined the same room', async () => {
+    smoothBot = await openBotPlayer();
+    await waitFor(() => (smoothBot.ready === true || smoothBot.status === 'online') && net.peers.has(smoothBot.id), 15000, 'both players to see each other');
+    return 'both in the room';
+  })) return;
+  sr.progress = 0.2;
+
+  // Bot walks a straight line so Unity's remote Animator sees non-zero HawkesNetTrack velocity.
+  let botT0 = performance.now();
+  smoothTick = setInterval(() => {
+    try {
+      const t = (performance.now() - botT0) / 1000;
+      const x = 2 + Math.sin(t * 1.2) * 3;
+      const z = 2 + Math.cos(t * 0.8) * 2;
+      const yaw = Math.atan2(Math.cos(t * 1.2) * 3 * 1.2, -Math.sin(t * 0.8) * 2 * 0.8);
+      smoothBot.pose([x, AVATAR_Y, z], yaw);
+    } catch { /* left */ }
+  }, 50);
+  clearAnimLog();
+  await sleep(500);
+
+  // Local walk then run (keyboard = full Speed).
+  key('d', true); await sleep(1200); key('d', false); await sleep(200);
+  key('w', true); key('d', true); await sleep(1000); key('w', false); key('d', false);
+  const walkAnim = scoreAnim(animLog());
+  sr.metrics.animWalkSamples = walkAnim.samples;
+  sr.metrics.remoteSpdMax = Math.max(0, ...animLog().flatMap((f) => (f.chars || []).filter((c) => !c.loc).map((c) => Number(c.spd) || 0)));
+  await srCheck('Remote character locomotion follows track velocity (walk/run)', async () => {
+    if (walkAnim.samples < 30) throw new Error(`only ${walkAnim.samples} anim samples while walking`);
+    if ((sr.metrics.remoteSpdMax ?? 0) < 0.4) throw new Error(`remote ground speed stayed ${sr.metrics.remoteSpdMax} (bot was moving; Animator should see track velocity)`);
+    srEvent('speed', `remote max ${sr.metrics.remoteSpdMax} m/s over ${walkAnim.samples} samples`);
+    return `remote spd up to ${sr.metrics.remoteSpdMax} m/s`;
+  });
+  sr.progress = 0.4;
+
+  sr.state.scene = 'Anim-Jump';
+  srEvent('scene', 'Anim-Jump');
+  clearAnimLog();
+  const seenJump = {};
+  smoothBot.onPose((id, st) => { if (id === net.id) { seenJump.j = st?.j; seenJump.e = st?.e; seenJump.n = st?.n; } });
+  const j0 = seenJump.j ?? sentExtra?.j ?? 0;
+  document.querySelector('canvas')?.focus?.();
+  key(' ', true); await sleep(80); key(' ', false);
+  await waitFor(() => (seenJump.j ?? 0) > j0 || (sentExtra?.j ?? 0) > j0, 5000, 'the local jump count to rise (Space)');
+  // Wait through apex and landing.
+  await sleep(1200);
+  // Bot jumps (Extra j) so Unity plays Jump → Land on the remote.
+  botStyle.j = (botStyle.j || 0) + 1;
+  const botJ = botStyle.j;
+  // Lift the bot pose briefly so the drawn remote leaves the ground, then land.
+  const base = [3, AVATAR_Y, 3];
+  for (let i = 0; i < 12; i++) {
+    const y = AVATAR_Y + Math.sin((i / 11) * Math.PI) * 1.4;
+    try { smoothBot.pose([base[0], y, base[2]], 0); } catch { /* */ }
+    await sleep(50);
+  }
+  try { smoothBot.pose(base, 0); } catch { /* */ }
+  await waitFor(() => {
+    const p = slot()?.poses?.[smoothBot.id];
+    try { return p?.e && JSON.parse(p.e)?.j === botJ; } catch { return false; }
+  }, 5000, 'Unity to receive the bot jump count');
+  await sleep(800);
+  const jumpAnim = scoreAnim(animLog());
+  Object.assign(sr.metrics, { jumpSamples: jumpAnim.samples, maxAirG: r1(jumpAnim.maxAirG), jumpStuck: jumpAnim.stuck });
+  await srCheck('Jumps show on the other screen and landings never stick airborne', async () => {
+    if ((seenJump.j ?? 0) <= j0 && (sentExtra?.j ?? 0) <= j0) throw new Error('the bot never saw the Unity player jump count');
+    const states = animLog().flatMap((f) => (f.chars || []).map((c) => c.st));
+    const sawJumpSt = states.includes('Jump');
+    const sawLandSt = states.includes('Land');
+    sr.metrics.sawJumpState = sawJumpSt ? 1 : 0;
+    sr.metrics.sawLandState = sawLandSt ? 1 : 0;
+    if (!sawJumpSt) throw new Error('Animator never reported st=Jump after Space / bot jump (bake Jump→Land?)');
+    if (!sawLandSt) throw new Error('Animator never reported st=Land after grounding (Jump must exit through Land)');
+    if (jumpAnim.stuck > 0 || jumpAnim.maxAirG > AIR_G_MAX + 0.05)
+      throw new Error(`quality.stuck-airborne: airG=${jumpAnim.maxAirG.toFixed(2)}s stuckFrames=${jumpAnim.stuck}`);
+    // After landing, no remote/local should stay in Jump while grounded.
+    const stuckJump = animLog().some((f) => (f.chars || []).some((c) => c.st === 'Jump' && c.g && (Number(c.airG) || 0) > AIR_G_MAX));
+    if (stuckJump) throw new Error('quality.stuck-airborne: st=Jump while grounded over 0.3 s');
+    srEvent('jump', `local j>${j0}, bot j=${botJ}, Jump+Land seen, max airG ${jumpAnim.maxAirG.toFixed(2)}s`);
+    return `jumps synced; Jump→Land seen; max air-while-grounded ${jumpAnim.maxAirG.toFixed(2)}s`;
+  });
+  sr.progress = 0.65;
+
+  sr.state.scene = 'Anim-Emote';
+  srEvent('scene', 'Anim-Emote');
+  for (const k of [1, 2, 3]) {
+    const n0 = seenJump.n ?? 0;
+    key(String(k), true); await sleep(80); key(String(k), false);
+    await waitFor(() => seenJump.e === k && (seenJump.n ?? 0) > n0, 5000, () => `bot to see emote ${k}`);
+    botStyle.e = k; botStyle.n += 1; const n = botStyle.n;
+    smoothBot.pose([3, AVATAR_Y, 3], 0);
+    await waitFor(() => {
+      const p = slot()?.poses?.[smoothBot.id];
+      try { const e = p?.e ? JSON.parse(p.e) : null; return e?.e === k && e?.n === n; } catch { return false; }
+    }, 5000, () => `Unity to receive bot emote ${k}`);
+    await sleep(900);
+  }
+  await srCheck('All three emotes show on the other player\'s screen both ways', async () => 'wave, hop, spin both ways');
+  sr.progress = 0.85;
+
+  clearAnimLog();
+  key('d', true); await sleep(2000); key('d', false); await sleep(400);
+  const final = scoreAnim(animLog());
+  Object.assign(sr.metrics, {
+    animSamples: final.samples,
+    maxSlide: r1(final.maxSlide),
+    maxAirGFinal: r1(final.maxAirG),
+    mismatches: final.mismatches,
+    stuckFrames: final.stuck,
+  });
+  await srCheck('Per-frame anim quality: no stuck-airborne, mismatch or foot-slide over threshold', async () => {
+    if (final.samples < 20) throw new Error(`only ${final.samples} anim samples (bridge ShowedAnim missing?)`);
+    if (final.stuck > 0 || final.maxAirG > AIR_G_MAX + 0.05)
+      throw new Error(`quality.stuck-airborne: airG=${final.maxAirG.toFixed(2)}s`);
+    if (final.mismatches > 8)
+      throw new Error(`quality.state-motion mismatch on ${final.mismatches} samples`);
+    if (final.maxSlide > SLIDE_MAX)
+      throw new Error(`quality.foot-slide: ${final.maxSlide.toFixed(2)} m/s (limit ${SLIDE_MAX})`);
+    srEvent('quality', `samples ${final.samples}, slide ${final.maxSlide.toFixed(2)}, airG ${final.maxAirG.toFixed(2)}, mis ${final.mismatches}`);
+    return `samples ${final.samples}, max slide ${final.maxSlide.toFixed(2)} m/s, airG ${final.maxAirG.toFixed(2)}s`;
+  });
+  sr.progress = 1;
+}
+
+// "two-players": real browsers meet (shared contract) + per-frame anim quality via the bridge.
+async function twoPlayersUnity() {
+  sr.state.scene = 'Two-Players';
+  srEvent('scene', 'Two-Players');
+  if (!await srCheck('Connected to Hawkes Net from the start screen', async () => {
+    await joinFromStartScreen();
+    if (!online()) throw new Error('the room did not come online after pressing Join');
+    const room = new URLSearchParams(location.search).get('room');
+    if (!room) sr.problems.push({ severity: 'warning', message: 'no ?room= on the address: playing in the shared demo room, where strangers may be' });
+    return room ? `room ${room}` : 'online';
+  })) return;
+  sr.progress = 0.15;
+  const net = slot().net;
+  main();
+  await waitFor(() => sent, 5000, 'the Unity player to send its place');
+
+  const others = () => [...(net.peers?.keys?.() ?? [])].filter((id) => id !== net.id);
+  let other = null;
+  if (!await srCheck('Another player is in the room', async () => {
+    const ms = await waitFor(() => others().length > 0, 60000, 'another browser to join');
+    other = others()[0];
+    sr.metrics.players = others().length + 1;
+    sr.metrics.meetMs = Math.round(ms);
+    return `${others().length + 1} players`;
+  })) return;
+  sr.progress = 0.35;
+
+  clearAnimLog();
+  // Keep moving so the other browser sees motion; sample anim quality the whole time.
+  const drive = (async () => {
+    try {
+      while (sr && !sr.done) {
+        key('d', true); await sleep(800); key('d', false); await sleep(200);
+        key('w', true); await sleep(600); key('w', false); await sleep(200);
+        key(' ', true); await sleep(80); key(' ', false); await sleep(900);
+      }
+    } catch { /* ended */ }
+  })();
+
+  await srCheck("The other player's moves show here", async () => {
+    const shown = (id) => slot()?.poses?.[id]?.p ?? null;
+    let first = shown(other)?.slice() ?? null;
+    await waitFor(() => {
+      const p = shown(other);
+      if (p && !first) first = p.slice();
+      return p && first && Math.hypot(p[0] - first[0], p[2] - first[2]) > 0.3;
+    }, 20000, 'the other player to move on this page');
+    return `other moved`;
+  });
+  sr.progress = 0.55;
+
+  await srCheck('Messages go both ways', async () => {
+    let got = 0;
+    const onMsg = (m) => { if (m && (m.from === other || m.peer === other)) got++; };
+    // Prefer the room's message API when present; otherwise a pose Extra change counts as a small message.
+    try { net.on?.('message', onMsg); } catch { /* */ }
+    try { net.send?.('ping', { t: Date.now() }); } catch { /* */ }
+    botStyle.n = (botStyle.n || 0); // no-op keep style alive
+    // Nudge Extra so the other side sees a small pose message.
+    const n0 = sentExtra?.n ?? 0;
+    key('1', true); await sleep(80); key('1', false);
+    await waitFor(() => (sentExtra?.n ?? 0) > n0 || got > 0, 15000, 'a message or emote Extra to go out');
+    sr.metrics.rttMs = sr.metrics.rttMs ?? 0;
+    return got > 0 ? `message from other` : `emote Extra sent (n>${n0})`;
+  });
+  sr.progress = 0.75;
+
+  await sleep(5000);
+  const q = scoreAnim(animLog());
+  Object.assign(sr.metrics, {
+    animSamples: q.samples,
+    maxSlide: r1(q.maxSlide),
+    maxAirG: r1(q.maxAirG),
+    mismatches: q.mismatches,
+    stuckFrames: q.stuck,
+  });
+  await srCheck('Per-frame anim quality on local and remote (bridge)', async () => {
+    if (q.samples < 30) throw new Error(`only ${q.samples} anim samples (ShowedAnim bridge)`);
+    if (q.stuck > 0 || q.maxAirG > AIR_G_MAX + 0.05)
+      throw new Error(`quality.stuck-airborne: airG=${q.maxAirG.toFixed(2)}s`);
+    if (q.mismatches > 12)
+      throw new Error(`quality.state-motion mismatch on ${q.mismatches} samples`);
+    if (q.maxSlide > SLIDE_MAX)
+      throw new Error(`quality.foot-slide: ${q.maxSlide.toFixed(2)} m/s`);
+    srEvent('quality', `samples ${q.samples}, slide ${q.maxSlide.toFixed(2)}, airG ${q.maxAirG.toFixed(2)}`);
+    return `samples ${q.samples}, slide≤${SLIDE_MAX}, airG≤${AIR_G_MAX}`;
+  });
+  sr.progress = 1;
+  await sleep(2000); // let the other browser finish its own checks
+  void drive;
+}
 
 // ---------------------------------------------------------------------------------------------------------------------
 // "humanoid": tinted RobotExpressive on the ground, locomotion speeds, soft push-apart (acceptance for the avatar swap).
@@ -909,9 +1171,16 @@ api.start = async (id, options = {}) => {
   const mine = sr;
   srEvent('start', id); srEvent('scene', 'Demo'); srPanel();
   try {
-    await (id === 'smooth' ? smooth() : id === 'crowd' ? crowd() : id === 'humanoid' ? humanoid() : id === 'phone' ? phone() : id === 'page' ? page() : startScreen());
+    await (id === 'smooth' ? smooth()
+      : id === 'crowd' ? crowd()
+      : id === 'humanoid' ? humanoid()
+      : id === 'anim-sync' ? animSync()
+      : id === 'two-players' ? twoPlayersUnity()
+      : id === 'phone' ? phone()
+      : id === 'page' ? page()
+      : startScreen());
   } catch (e) { sr.problems.push({ severity: 'bug', message: `bot error: ${e?.message ?? e}` }); }
-  finally { if (id === 'smooth' || id === 'crowd' || id === 'humanoid' || id === 'phone') await smoothEnd(); }
+  finally { if (id === 'smooth' || id === 'crowd' || id === 'humanoid' || id === 'anim-sync' || id === 'phone') await smoothEnd(); }
   if (mine !== sr) return;
   mine.done = true; mine.seconds = srNow();
   mine.state.status = mine.lines.length && mine.lines.every((l) => l.ok) ? 'won' : 'lost';

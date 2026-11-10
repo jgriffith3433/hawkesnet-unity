@@ -103,6 +103,8 @@ namespace Hawkes.Editor
             while (controller.parameters.Length > 0)
                 controller.RemoveParameter(0);
             controller.AddParameter("Speed", AnimatorControllerParameterType.Float);
+            controller.AddParameter("Grounded", AnimatorControllerParameterType.Bool);
+            controller.AddParameter("Jump", AnimatorControllerParameterType.Trigger);
             controller.AddParameter("Wave", AnimatorControllerParameterType.Trigger);
             controller.AddParameter("Hop", AnimatorControllerParameterType.Trigger);
             controller.AddParameter("Spin", AnimatorControllerParameterType.Trigger);
@@ -127,6 +129,32 @@ namespace Hawkes.Editor
             var loco = sm.AddState("Locomotion", new Vector3(300f, 0f, 0f));
             loco.motion = tree;
             sm.defaultState = loco;
+
+            // Jump → Land → Locomotion (quality rule 5: landings blend back within 0.3 s; capsule probe sets Grounded).
+            var jumpSt = sm.AddState("Jump", new Vector3(560f, 0f, 0f));
+            jumpSt.motion = jump;
+            var enterJump = sm.AddAnyStateTransition(jumpSt);
+            enterJump.hasExitTime = false;
+            enterJump.duration = 0.05f;
+            enterJump.canTransitionToSelf = false;
+            enterJump.AddCondition(AnimatorConditionMode.If, 0f, "Jump");
+
+            var landSt = sm.AddState("Land", new Vector3(560f, 80f, 0f));
+            landSt.motion = idle; // RobotExpressive has no Land clip; short Idle settle is the landing
+            var toLand = jumpSt.AddTransition(landSt);
+            toLand.hasExitTime = false;
+            toLand.duration = 0.05f;
+            toLand.AddCondition(AnimatorConditionMode.If, 0f, "Grounded");
+            var landBack = landSt.AddTransition(loco);
+            landBack.hasExitTime = true;
+            landBack.exitTime = 0.15f; // ~0.15 of Idle ≈ well under 0.3 s
+            landBack.duration = 0.08f;
+            landBack.hasFixedDuration = true;
+            var landExit = landSt.AddExitTransition();
+            landExit.hasExitTime = true;
+            landExit.exitTime = 1f;
+            landExit.duration = 0f;
+            // No Jump→Locomotion shortcut: Grounded always goes Jump → Land → Locomotion so landings are visible.
 
             AddEmoteState(sm, loco, "Wave", wave, "Wave", new Vector3(300f, 80f, 0f));
             AddEmoteState(sm, loco, "Hop", jump, "Hop", new Vector3(300f, 160f, 0f));

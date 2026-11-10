@@ -247,7 +247,7 @@ namespace Hawkes
     public static class HawkesNet
     {
         /// <summary>This package's version (what package.json says; keep the two in step on a release). The start screen shows it.</summary>
-        public const string PackageVersion = "0.11.0";
+        public const string PackageVersion = "0.12.0";
 
 #if UNITY_WEBGL && !UNITY_EDITOR
         [DllImport("__Internal")] static extern void HawkesNet_Join(int handle, string room, string optionsJson, string receiver);
@@ -265,6 +265,7 @@ namespace Hawkes
         [DllImport("__Internal")] static extern int HawkesNet_Watched(int handle);
         [DllImport("__Internal")] static extern void HawkesNet_Drawn(int handle, string json);
         [DllImport("__Internal")] static extern void HawkesNet_Hud(string json);
+        [DllImport("__Internal")] static extern void HawkesNet_Anim(string json);
         [DllImport("__Internal")] static extern int HawkesNet_IsTouch();
         [DllImport("__Internal")] static extern void HawkesNet_Touch(string json);
         [DllImport("__Internal")] static extern void HawkesNet_TextOpen(string label, string value, int max, string hint);
@@ -288,6 +289,7 @@ namespace Hawkes
         static int HawkesNet_Watched(int handle) => 0;
         static void HawkesNet_Drawn(int handle, string json) { }
         static void HawkesNet_Hud(string json) { }
+        static void HawkesNet_Anim(string json) { }
         static int HawkesNet_IsTouch() => 0;
         static void HawkesNet_Touch(string json) { }
         static void HawkesNet_TextOpen(string label, string value, int max, string hint) { }
@@ -345,6 +347,14 @@ namespace Hawkes
             if (!Live) return;
             string Q(string t) => "\"" + (t ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
             HawkesNet_Hud("{\"main\":" + Q(main) + ",\"debug\":" + Q(debug) + "}");
+        }
+
+        /// <summary>Per-frame animation quality samples (WebGL), for Studio's playtest: window.__hawkesNet.anim =
+        /// {f, chars:[{id,g,air,land,st,spd,slide,airG,mis,stuck,...}]}. The Avatars sample / demo writes this every frame.</summary>
+        public static void ShowedAnim(string json)
+        {
+            if (!Live || string.IsNullOrEmpty(json)) return;
+            HawkesNet_Anim(json);
         }
 
         /// <summary>True on a phone or tablet: the main pointer is a finger (a WebGL page says so; elsewhere the device has a
