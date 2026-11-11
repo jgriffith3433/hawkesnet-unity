@@ -68,8 +68,8 @@ namespace Hawkes
         string self = "", host = "";
         string resume;
         string relayUrl;
-        bool away, ready, closed, resuming, draining;
-        int retry;
+        bool away, ready, closed, resuming, draining, reconnecting;
+        int retry, hellos;
 
         sealed class Peer { public string id, name; public int ord; public bool away; }
 
@@ -191,13 +191,14 @@ namespace Hawkes
             {
                 int closeCode = 0;
                 string closeReason = "";
-                bool opened = false;
+                bool opened = false, wasResume = false;
+                int hellosBefore = hellos;
                 try
                 {
                     string url;
                     if (!string.IsNullOrEmpty(resume) && !string.IsNullOrEmpty(relayUrl))
                     {
-                        resuming = true;
+                        resuming = wasResume = true;
                         url = relayUrl + (relayUrl.Contains("?") ? "&" : "?") + "r=" + Uri.EscapeDataString(resume);
                     }
                     else
@@ -209,7 +210,7 @@ namespace Hawkes
                         {
                             if (!ready) { Tell("error", new Dictionary<string, object> { ["reason"] = "ticket", ["data"] = e.Message }); closed = true; return; }
                             // Ticket failure after we were in: backoff, then try again (full failure).
-                            await Wait(draining ? Math.Min(800, 150 << Math.Min(3, retry++)) : 5000);
+                            await Wait(Backoff());
                             continue;
                         }
                         relayUrl = NetJson.Str(t, "relayUrl", "");
@@ -229,7 +230,6 @@ namespace Hawkes
                     Problem("relay-lost", e.Message);
                     // Connect refused before any frame (410 resume_gone, 502 while the node comes back): same as a
                     // resume try that closed before its hello.
-                    if (resuming) { resume = null; resuming = false; }
                     if (!ready && !opened)
                     {
                         if (retry++ < 2) { await Wait(600); continue; }
@@ -258,16 +258,22 @@ namespace Hawkes
                     closed = true;
                     return;
                 }
-                // A resume try that closed before its hello: the room is gone — don't resume again.
-                if (resuming) { resume = null; resuming = false; }
+                bool helloed = hellos != hellosBefore;
+                // A resume try that was refused (410 / 502) or closed before its hello: the room is gone, so drop the
+                // token and ask for a fresh ticket at once. Same for a node that said it is draining.
+                if (wasResume && !helloed) resume = null;
+                resuming = false;
                 if (draining) resume = null;
-                Status("reconnecting");
-                int wait = draining
-                    ? Math.Min(800, 150 << Math.Min(3, retry++))
-                    : Math.Min(15000, 500 << Math.Min(5, retry++));
-                await Wait(wait);
+                if (!reconnecting) { reconnecting = true; Status("reconnecting"); }
+                // Backoff only between full failures (a ticket or connect that failed with nothing to resume): a drop
+                // out of a live session, or a refused resume, goes straight to the next try.
+                if (!helloed && !wasResume) await Wait(Backoff());
             }
         }
+
+        // 500, 1000, 2000 ms, then 2 s for a few more tries (a short network drop is rejoined soon after it ends), then up
+        // to 15 s for a long outage.
+        int Backoff() { int n = retry++; return Math.Min(n < 8 ? 2000 : 15000, 500 << Math.Min(5, n)); }
 
         async Task Wait(int ms)
         {
@@ -476,8 +482,10 @@ namespace Hawkes
             var tok = NetJson.Str(m, "resume", "");
             if (!string.IsNullOrEmpty(tok)) resume = tok;
             retry = 0;
+            hellos++;
             resuming = false;
             draining = false;
+            reconnecting = false;
             self = NetJson.Str(m, "you", "");
             host = NetJson.Str(m, "host", "");
             var now = NetJson.Num(m, "now");

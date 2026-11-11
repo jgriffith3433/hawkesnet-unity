@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.14.2 (2026-11-11)
+
+- **Recovery has no wait before a fresh ticket.** A drop out of a live session tries one resume at once; a refused
+  resume (410 `resume_gone`, a proxy 502, or a socket that closes before its hello) drops the token and asks for a
+  fresh ticket at once; a node `draining` frame skips the resume and does the same. Backoff (500 ms, 1 s, then 2 s for
+  a few tries, up to 15 s in a long outage) applies only between full failures, and a failed ticket uses it too (it
+  used to wait a flat 5 s, so a short network drop was rejoined late). `reconnecting` is told once per outage.
+- Fake-transport EditMode tests: a 5 s network drop rejoins within 3 s of the return with one reconnecting and one
+  online; 410 / 502 / close-before-hello each rejoin after exactly one fresh ticket with no delay; backoff only between
+  full failures; a node restart asks for a ticket at once; a peer's away and back each fire once.
+
 ## 0.14.1 (2026-11-11)
 
 - **Managed reconnect matches JS SDK 1.4.1+.** After an unexpected close the managed client (`HawkesNetClient`) tries

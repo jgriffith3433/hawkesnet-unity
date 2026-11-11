@@ -1,1 +1,2 @@
-- lesson: Name the page scenario — beta plays only the scenario named in .hawkes/scenario.txt (default smoke), so page-level criteria need `page` named there, with one event per criterion.
+- lesson: Recovery waits hide in the tail of Run() — a refused resume must not hit Backoff(); the fake-transport Delay hook records every wait, assert Delays is empty.
+- convention: HawkesNetClient reconnect tests use FakeHub in Tests/Editor/HawkesNetReconnectTests.cs (Down / TicketsDown / Refusal / RealDelay).
