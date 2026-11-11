@@ -74,7 +74,7 @@
       try {
         var u = new URL(location.href);
         var pt = u.searchParams.get('playtest') || '';
-        if ((pt === 'phone' || pt === 'camera-feel' || pt === 'drop-recover') && u.searchParams.get('touch') !== '1') {
+        if ((pt === 'phone' || pt === 'camera-feel' || pt === 'drop-recover' || pt === 'reconnect') && u.searchParams.get('touch') !== '1') {
           u.searchParams.set('touch', '1');
           history.replaceState(null, '', u.toString());
         }
@@ -92,13 +92,15 @@
         product: 'hawkes-net-unity',
         _stub: true,
         scenarios: function () {
-          // Named here so Studio sees smoke, two-players and phone while Unity is still loading
+          // Named here so Studio sees smoke, two-players, phone, page, drop-recover and reconnect while Unity is still loading
           // (unity-playtest.mjs upgrades the stub with the full list when the sample is ready).
           return [
             { id: 'smoke', title: 'Two players in one page meet in a room, move, message and leave', seconds: 45, tags: ['smoke'] },
             { id: 'two-players', title: 'Real browsers on one ?room= find each other, move and message', seconds: 75, tags: ['full', 'multiplayer'] },
             { id: 'phone', title: 'Phone: join by touch, joystick and emote at 390x844', seconds: 90, tags: ['full', 'ui', 'phone'] },
-            { id: 'page', title: 'Playtest hook, demo root and load error card', seconds: 30, tags: ['smoke', 'ui'] }
+            { id: 'page', title: 'Playtest hook, demo root and load error card', seconds: 30, tags: ['smoke', 'ui'] },
+            { id: 'drop-recover', title: 'Drop and recover: a 5 s network drop shows Reconnecting then Back in the room, same name and colour', seconds: 90, tags: ['full', 'multiplayer', 'netcode', 'phone'] },
+            { id: 'reconnect', title: 'Reconnect: same scenario as drop-recover', seconds: 90, tags: ['full', 'multiplayer', 'netcode', 'phone'] }
           ];
         },
         start: function (id, options) { queued = { id: id, options: options || {} }; },
