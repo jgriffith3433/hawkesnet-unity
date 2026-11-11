@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.14.5 (2026-11-11)
+
+- **Demo build: no more Unity segfault (exit 139).** The demo build no longer adds `Sprites/Default` and `GUI/Text Shader`
+  to Always Included Shaders (the demo builds failed from the commit that added them). The nameplate backing falls back
+  to Standard in fade mode when `Sprites/Default` is not in a build; the text uses the font's own material.
+
 ## 0.14.4 (2026-11-11)
 
 - **Scene audit no longer calls avatar body parts "floating".** `HawkesNetSceneAudit.IsStaticProp` only skipped a
