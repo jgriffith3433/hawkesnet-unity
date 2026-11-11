@@ -77,6 +77,7 @@ namespace Hawkes.Samples
         HawkesNetAvatars avatars;
         HawkesNetStartScreen start;
         HawkesNetTouchControls touch;
+        HawkesNetFollowCamera followCam;
         readonly View me = new View();
         readonly Dictionary<string, View> views = new Dictionary<string, View>();
         readonly Style style = new Style();
@@ -148,11 +149,7 @@ namespace Hawkes.Samples
             AddWall(new Vector3(-wallCentre, wallHeight * 0.5f, 0f), new Vector3(wallThickness, wallHeight, wallLength), wallMaterial);
 
             var cam = Camera.main != null ? Camera.main : new GameObject("Camera").AddComponent<Camera>();
-            cam.transform.SetParent(player, false);
-            cam.transform.localPosition = new Vector3(0f, 4f, -8f);
-            cam.transform.localRotation = Quaternion.Euler(20f, 0f, 0f);
-            if (cam.nearClipPlane < HawkesNetSceneAudit.MinNearClip) cam.nearClipPlane = HawkesNetSceneAudit.MinNearClip;
-
+            // Damped follow (SphereCast pull-in, yaw/pitch cap, idle recentre) — unparented from the avatar.
             HawkesNet.SimulatedLatency = UrlNumber("lag");
             HawkesNet.SimulatedJitter = UrlNumber("jitter");
 
@@ -171,6 +168,7 @@ namespace Hawkes.Samples
             start.Area = Area;
             touch = gameObject.AddComponent<HawkesNetTouchControls>();
             touch.StartScreen = start;
+            followCam = HawkesNetFollowCamera.Attach(cam, player, start);
             gameObject.SetActive(true);
             avatars.Lobby.Joined += OnJoined;
 
@@ -179,6 +177,7 @@ namespace Hawkes.Samples
 
             // Scene audit (quality rules 2/3/4/11): publish to window.__hawkesNet.scene for smoke.
             // Uses a dedicated probe camera so the player's follow cam never snaps.
+            HawkesNetSceneAudit.ResetFollowInside();
             StartCoroutine(RunSceneAudit(cam));
             if (HawkesNetLobby.Query("playtest") == "nameplates")
                 StartCoroutine(RunNamePlateProbes(cam));
@@ -303,6 +302,7 @@ namespace Hawkes.Samples
                 player.position += new Vector3(delta.x, 0f, delta.z);
                 player.rotation = Quaternion.RotateTowards(player.rotation, Quaternion.LookRotation(move), TurnSpeed * Time.deltaTime);
             }
+            if (followCam != null) followCam.NotifyMotion(moveAmt > 0.01f);
 
             string selfId = avatars.Lobby != null && avatars.Lobby.Room != null ? avatars.Lobby.Room.Id : "";
             float myRadius = AvatarRadius(player);

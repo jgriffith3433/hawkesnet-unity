@@ -28,6 +28,9 @@ Smoke playtest runs a scene audit (ground contact, z-fight, inside-out, camera o
 The `nameplates` playtest orbits a probe camera 360° around a remote and checks names never read mirrored, stay
 readable on a phone, and vanish when occluded. The `drop-recover` playtest cuts a player's network for 5 s and checks the
 banner, a recovery under 2 s with the same identity, and the ghost on the other side.
+The third-person camera is a damped follow (`HawkesNetFollowCamera`): it SphereCasts into walls with a smooth pull-in /
+ease-out, never snaps more than 30° in a frame, and eases back behind you after 2 s still; a right-half finger drag
+orbits on a phone. The `camera-feel` playtest walks into the edge walls and reads `window.__hawkesNet.camera`.
 
 ## Story beats
 1. Join — type a name, enter the arena (gameplay, not a text dump).

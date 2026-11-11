@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.15.0 (2026-11-11)
+
+- **Avatars sample: damped follow camera (Mario Odyssey-style).** Replaces the parented follow cam with
+  `HawkesNetFollowCamera`: SphereCast from the look-at pivot to the wanted eye with a fast pull-in at walls and a slow
+  ease-out when clear, yaw/pitch damping capped at 30° per frame (no snap), and idle recentre behind the avatar after
+  2 s still. Right-mouse / one-finger drag on the right half of the screen orbits. The play-mode scene audit also counts
+  follow-cam inside frames (`followInsideFrames` on `window.__hawkesNet.scene`); the camera log goes to
+  `window.__hawkesNet.camera` via `HawkesNet.ShowedCamera`. Playtest scenario `camera-feel` (DevTools/demo-web). Demo
+  stays in step. EditMode tests cover pull-in, the turn cap and idle recentre.
 - **Avatars sample: a dropped player is shown, not hidden.** The sample listens to `OnReconnecting` / `OnReconnected` (and
   a lost room the lobby is joining again): a small banner inside `Screen.safeArea` says "Reconnecting…", then "Back in
   the room" for 2.5 s; the local name and colour are never touched. A remote the room has marked away (`room.Away`: its

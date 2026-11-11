@@ -266,6 +266,25 @@ mergeInto(LibraryManager.library, {
     } catch (e) {}
   },
 
+  // Gameplay follow camera (HawkesNet.ShowedCamera): yaw/pitch deltas, wall pull-in, idle recentre, inside frames.
+  // window.__hawkesNet.camera is the newest sample; .cameraLog keeps a short ring for the camera-feel playtest.
+  // Also keeps window.__hawkesNet.scene.followInsideFrames live so the play-mode audit sees wall-walk samples.
+  HawkesNet_Camera: function (jsonPtr) {
+    var S = window.__hawkesNet = window.__hawkesNet || { rooms: {} };
+    try {
+      var a = JSON.parse(UTF8ToString(jsonPtr));
+      a.t = performance.now();
+      S.camera = a;
+      var log = S.cameraLog = S.cameraLog || [];
+      log.push(a);
+      if (log.length > 900) log.splice(0, log.length - 900);
+      if (S.scene) {
+        S.scene.followInsideFrames = a.followInsideFrames|0;
+        if (typeof a.insideFrames === 'number') S.scene.followCameraInsideFrames = a.insideFrames|0;
+      }
+    } catch (e) {}
+  },
+
   // Phones and tablets: 1 when the page's main pointer is a finger (or the page has touch points and a mobile browser).
   HawkesNet_IsTouch: function () {
     try {

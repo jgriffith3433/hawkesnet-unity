@@ -30,12 +30,36 @@ namespace Hawkes
             public bool NearClipOk;
             public int OrbitFrames;
             public int CameraInsideFrames;
+            /// <summary>Gameplay follow-cam frames whose lens sat inside a static collider (wall-walk audit).</summary>
+            public int FollowInsideFrames;
             public bool StaticDone;
             public bool Done;
 
             public bool Clean =>
                 Floating.Count == 0 && Sunk.Count == 0 && ZFight.Count == 0 && InsideOut.Count == 0
-                && CameraInsideFrames == 0 && NearClipOk;
+                && CameraInsideFrames == 0 && FollowInsideFrames == 0 && NearClipOk;
+        }
+
+        /// <summary>Live follow-cam inside count published with every scene JSON (HawkesNetFollowCamera updates it).</summary>
+        public static int FollowInsideFrames { get; private set; }
+        static readonly List<string> followInsideNames = new List<string>();
+
+        /// <summary>Record one gameplay-camera sample that sat inside a static collider.</summary>
+        public static void NoteFollowInside(string name)
+        {
+            FollowInsideFrames++;
+            if (!string.IsNullOrEmpty(name) && !followInsideNames.Contains(name))
+                followInsideNames.Add(name);
+        }
+
+        /// <summary>Gameplay camera is clear this frame (names kept for the report).</summary>
+        public static void NoteFollowClear() { }
+
+        /// <summary>Reset the live follow-cam counters (EditMode tests / a new play session).</summary>
+        public static void ResetFollowInside()
+        {
+            FollowInsideFrames = 0;
+            followInsideNames.Clear();
         }
 
         /// <summary>True for arena dressing the audit cares about (not avatars or the ground plane itself).</summary>
@@ -302,11 +326,15 @@ namespace Hawkes
             b.Append(",\"nearClipOk\":").Append(r.NearClipOk ? "true" : "false");
             b.Append(",\"orbitFrames\":").Append(r.OrbitFrames);
             b.Append(",\"cameraInsideFrames\":").Append(r.CameraInsideFrames);
+            // Live follow-cam wall samples (HawkesNetFollowCamera → NoteFollowInside), plus any copy on the report.
+            int follow = Math.Max(r.FollowInsideFrames, FollowInsideFrames);
+            b.Append(",\"followInsideFrames\":").Append(follow);
             AppendList(b, "floating", r.Floating);
             AppendList(b, "sunk", r.Sunk);
             AppendList(b, "zfight", r.ZFight);
             AppendList(b, "insideOut", r.InsideOut);
             AppendList(b, "cameraInside", r.CameraInside);
+            AppendList(b, "followInside", followInsideNames);
             b.Append('}');
             return b.ToString();
         }
