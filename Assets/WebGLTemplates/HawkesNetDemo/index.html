@@ -100,7 +100,7 @@
             { id: 'phone', title: 'Phone: join by touch, joystick and emote at 390x844', seconds: 90, tags: ['full', 'ui', 'phone'] },
             { id: 'page', title: 'Playtest hook, demo root and load error card', seconds: 30, tags: ['smoke', 'ui'] },
             { id: 'drop-recover', title: 'Drop and recover: a 5 s network drop shows Reconnecting then Back in the room, same name and colour', seconds: 90, tags: ['full', 'multiplayer', 'netcode', 'phone'] },
-            { id: 'reconnect', title: 'Reconnect: same scenario as drop-recover', seconds: 90, tags: ['full', 'multiplayer', 'netcode', 'phone'] }
+            { id: 'reconnect', title: 'Reconnect: 5 s drop, blip resume, refused resume with one fresh ticket, peer away and back counted', seconds: 180, tags: ['full', 'multiplayer', 'netcode', 'phone'] }
           ];
         },
         start: function (id, options) { queued = { id: id, options: options || {} }; },

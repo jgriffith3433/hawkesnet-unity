@@ -413,8 +413,8 @@ api.scenarios = () => [...baseScenarios().map((s) => (s.id === 'smoke'
   description: 'Two real browsers on one ?room= meet, move and trade messages (same as the shared net-playtest two-players), then each samples window.__hawkesNet.anim every frame: stuck-airborne, state/motion mismatch and foot-slide fail above thresholds on local and remote characters. Last leg: the later browser (B) loses its network for 5 s: it must show Reconnecting within 1 s and Back in the room after, report recoveryMs under 2000 with the same name and colour (identityMatch 1); the other browser (A) must show B ghosted (faded, tagged away) rather than gone.' },
 { id: 'drop-recover', title: 'Drop and recover: a 5 s network drop shows Reconnecting then Back in the room, same name and colour, others see the player away not gone', seconds: 90, tags: ['full', 'multiplayer', 'netcode', 'phone'],
   description: 'One browser (works at the phone size 390x844 with touch: it joins by tapping Join) plus the bot as a second player. The Unity player\'s network is cut for 5 s: the banner must say Reconnecting within 1 s (inside the safe area), then Back in the room after the network returns; recoveryMs must be under 2000 with the same name and colour (identityMatch 1); the bot must see the player away, never gone. Then the bot drops for 5 s: the Unity page must show its avatar ghosted with its name and away, not removed, and normal again after. Metrics: dropBannerMs, recoveryMs, backBannerMs, identityMatch, bannerInsideSafeArea, ghostShownMs, ghostHeldMs.' },
-{ id: 'reconnect', title: 'Reconnect (same scenario as drop-recover): a 5 s network drop shows Reconnecting then Back in the room, same name and colour, others see the player away not gone', seconds: 90, tags: ['full', 'multiplayer', 'netcode', 'phone'],
-  description: 'One browser (works at the phone size 390x844 with touch: it joins by tapping Join) plus the bot as a second player. The Unity player\'s network is cut for 5 s: the banner must say Reconnecting within 1 s (inside the safe area), then Back in the room after the network returns; recoveryMs must be under 2000 with the same name and colour (identityMatch 1); the bot must see the player away, never gone. Then the bot drops for 5 s: the Unity page must show its avatar ghosted with its name and away, not removed, and normal again after. Metrics: dropBannerMs, recoveryMs, backBannerMs, identityMatch, bannerInsideSafeArea, ghostShownMs, ghostHeldMs.' },
+{ id: 'reconnect', title: 'Reconnect: 5 s drop, blip resume, refused resume with one fresh ticket, peer away and back counted', seconds: 180, tags: ['full', 'multiplayer', 'netcode', 'phone'],
+  description: 'Joins (by tap on the phone, else the start screen) and opens the bot as a second player. Leg 1: the Unity player\'s network is cut for 5 s: Reconnecting within 1 s, Back in the room after, recovery under 2000 ms, same name and colour; events reconnecting x1, reconnected x1, and the bot sees it peer-away x1 and peer-back x1. Leg 2: the bot drops for 5 s: the Unity page shows it ghosted then normal, peer-away x1 and peer-back x1. Leg 3: a socket close (blip) resumes in the same room within 3 s with the same peer id. Leg 4: the resume token is poisoned (node restart, resume_gone) and the socket closed: at most one resume, then a fresh ticket, online again. Events: reconnecting, reconnected, peer-away, peer-back, blip-recovered, resume-refused, ticket-rejoined. Metrics: dropBannerMs, recoveryMs, peerAwayEvents, peerBackEvents, botAwayEvents, botBackEvents, blipRecoverMs, resumeTries, ticketTriesAfterDrop. Package EditMode/PlayMode tests cover the managed client on a fake transport.' },
 { id: 'nameplates', title: 'World-space nameplates: never mirrored on a 360 orbit, readable on phone, hidden behind a wall', seconds: 75, tags: ['full', 'ui', 'quality'],
   description: 'Joins, opens a second player, waits for window.__hawkesNet.names: occlusion probe (hid behind a wall then shown), a dedicated probe-camera 360 orbit with mirroredFrames=0, every plate scale positive, and screenPx tall enough to read on a 390 px phone. Scenes Names-Meet / Names-Orbit / Names-Occlude for screenshots of unmirrored text.' },
 { id: 'camera-feel', title: 'Damped follow camera: wall walk with 0 inside frames, turn cap 30°, idle recentre, phone touch orbit', seconds: 90, tags: ['full', 'feel', 'quality', 'phone'],
@@ -1203,7 +1203,7 @@ async function seeGhost(id, ghosts, { dropAt = 0 } = {}) {
   return { name: e.name, shownMs, heldMs };
 }
 
-async function dropRecover(opts = {}) {
+async function dropRecover(opts = {}, full = false) {
   sr.state.scene = 'Drop-Recover';
   srEvent('scene', 'Drop-Recover');
   const touchRun = innerWidth <= 500;
@@ -1225,6 +1225,7 @@ async function dropRecover(opts = {}) {
   const ghosts = watchGhosts();
   const outage = makeOutage();
   let bot = null, tick = null;
+  const offs = [];
   try {
     // The second player (the bot): sees the Unity player go away and come back, and is the one the Unity page sees ghosted.
     if (!await srCheck('A second player joined the same room', async () => {
@@ -1240,6 +1241,19 @@ async function dropRecover(opts = {}) {
     srEvent('phase', `the Unity player drops for ${DROP_MS / 1000} s`);
     let seenAway = 0, seenGone = false;
     const unityId = net.id;
+    // The SDK's own events, counted: one away and one back per leave and return (OnPeerAway / OnPeerBack), one
+    // reconnecting and one online per drop (OnReconnecting / OnReconnected).
+    const tally = { away: {}, back: {}, reconnecting: 0, reconnected: 0 };
+    const onWhen = (o, ev, fn) => { try { if (typeof o?.when === 'function') offs.push(o.when(ev, fn)); } catch { /* */ } };
+    const countAway = (x) => { const id = x?.peer?.id; if (!id) return; const k = x.away ? 'away' : 'back'; tally[k][id] = (tally[k][id] || 0) + 1; srEvent(x.away ? 'peer-away' : 'peer-back', `${x.peer.name || id} (${tally[k][id]})`); };
+    let sawReconnecting = false;
+    onWhen(bot, 'peer:away', countAway);
+    onWhen(net, 'peer:away', countAway);
+    onWhen(net, 'status', (x) => {
+      const st = x?.status || '';
+      if (st === 'reconnecting') { tally.reconnecting++; sawReconnecting = true; srEvent('reconnecting', `#${tally.reconnecting}`); }
+      else if (st === 'online' && sawReconnecting) { sawReconnecting = false; tally.reconnected++; srEvent('reconnected', `#${tally.reconnected}`); }
+    });
     const watch = setInterval(() => { const p = bot.peers.get(unityId); if (!p) seenGone = true; else if (p.away) seenAway++; }, 50);
     let d = null;
     try { d = await dropSelf(net, outage); } catch (e) { sr.problems.push({ severity: 'bug', message: `drop: ${e?.message ?? e}` }); srEvent('fail', String(e?.message ?? e)); }
@@ -1254,6 +1268,13 @@ async function dropRecover(opts = {}) {
       return `away for about ${seenAway * 50} ms, then present`;
     });
     sr.progress = 0.75;
+    if (full) await srCheck('The Unity player\'s 5 s drop raised reconnecting once before and online once after; the bot saw it away once and back once', async () => {
+      if (tally.reconnecting !== 1 || tally.reconnected !== 1) throw new Error(`reconnecting x${tally.reconnecting}, reconnected x${tally.reconnected} (need 1 each)`);
+      const a = tally.away[unityId] || 0, b = tally.back[unityId] || 0;
+      if (a !== 1 || b !== 1) throw new Error(`the bot saw the player away x${a}, back x${b} (need 1 each)`);
+      Object.assign(sr.metrics, { reconnectingEvents: tally.reconnecting, reconnectedEvents: tally.reconnected, peerAwayEvents: a, peerBackEvents: b });
+      return 'reconnecting 1, reconnected 1, peer away 1, peer back 1';
+    });
 
     // Leg 2: the Unity player is client A. The bot drops; the Unity page shows the bot's avatar ghosted with its name, then normal.
     srEvent('phase', `the other player drops for ${DROP_MS / 1000} s`);
@@ -1268,12 +1289,22 @@ async function dropRecover(opts = {}) {
       if (g.shownMs > 3000) throw new Error(`it showed as away only ${g.shownMs} ms after the drop`);
       return `"${g.name}" ghosted ${g.shownMs} ms after the drop for ${g.heldMs} ms, not removed`;
     });
+    if (full) await srCheck('The Unity page saw the bot away once and back once (OnPeerAway / OnPeerBack)', async () => {
+      await waitFor(() => (tally.back[botId] || 0) >= 1, 8000, 'the bot to be reported back');
+      await sleep(500); // a second, stray event would land here
+      const a = tally.away[botId] || 0, b = tally.back[botId] || 0;
+      if (a !== 1 || b !== 1) throw new Error(`peer away x${a}, peer back x${b} for the bot (need 1 each)`);
+      Object.assign(sr.metrics, { botAwayEvents: a, botBackEvents: b });
+      return 'peer away 1, peer back 1';
+    });
   } finally {
+    for (const off of offs) { try { off?.(); } catch { /* */ } }
     clearInterval(tick); ghosts.stop(); outage.done();
     try { bot?.leave?.(); } catch { /* */ }
   }
-  sr.progress = 1;
   void opts;
+  if (full) { sr.progress = 0.7; await reconnect(true); return; } // then the blip, refused-resume and node-restart legs
+  sr.progress = 1;
 }
 
 /** Two real browsers: the one that joined last (the higher id) is B and drops; the other (A) watches it ghosted. */
@@ -1572,10 +1603,10 @@ function installConnectProbe() {
   return { urls, restore: () => { globalThis.WebSocket = RealWS; } };
 }
 
-async function reconnect() {
+async function reconnect(joined = false) {
   sr.state.scene = 'Reconnect-Blip';
   srEvent('scene', 'Reconnect-Blip');
-  if (!await srCheck('Connected to Hawkes Net from the start screen', async () => {
+  if (!joined && !await srCheck('Connected to Hawkes Net from the start screen', async () => {
     await joinFromStartScreen();
     if (!online()) throw new Error('the room did not come online after pressing Join');
     return 'online';
@@ -1805,7 +1836,8 @@ api.start = async (id, options = {}) => {
       : id === 'camera-feel' ? cameraFeel()
       : id === 'page' ? page()
       : id === 'reconnect-blip' ? reconnect()
-      : id === 'reconnect' || id === 'drop-recover' ? dropRecover(options)
+      : id === 'reconnect' ? dropRecover(options, true)
+      : id === 'drop-recover' ? dropRecover(options)
       : startScreen());
   } catch (e) { sr.problems.push({ severity: 'bug', message: `bot error: ${e?.message ?? e}` }); }
   finally { if (id === 'smooth' || id === 'crowd' || id === 'humanoid' || id === 'anim-sync' || id === 'phone' || id === 'nameplates' || id === 'camera-feel') await smoothEnd(); }
