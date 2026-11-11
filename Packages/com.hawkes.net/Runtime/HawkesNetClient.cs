@@ -18,6 +18,16 @@ using System.Threading.Tasks;
 
 namespace Hawkes
 {
+    /// <summary>One open wire to the relay (text frames). Production uses <see cref="ClientWebSocket"/>; tests inject a fake.</summary>
+    public interface IHawkesNetWire : IDisposable
+    {
+        Task SendTextAsync(string text, CancellationToken ct);
+        /// <summary>Next text frame, or null when the socket closed.</summary>
+        Task<string> ReceiveTextAsync(CancellationToken ct);
+        int CloseCode { get; }
+        string CloseReason { get; }
+    }
+
     /// <summary>What a managed room needs to join (HawkesNetOptions' fields, without Unity).</summary>
     public sealed class HawkesNetClientOptions
     {
@@ -25,13 +35,19 @@ namespace Hawkes
         /// <summary>The room's shape if this join creates it, as JSON (or empty).</summary>
         public string configJson = "";
         public bool ticketCredentials;
+        /// <summary>Test hook: open a wire for this URI (ticket or resume query already on it). Null uses ClientWebSocket.</summary>
+        public Func<Uri, CancellationToken, Task<IHawkesNetWire>> ConnectWire;
+        /// <summary>Test hook: fetch a join ticket. Null uses HTTPS to the endpoint / ticketUrl.</summary>
+        public Func<CancellationToken, Task<Dictionary<string, object>>> AskTicket;
+        /// <summary>Test hook: delay (ms) before a reconnect try. Null uses Task.Delay. Pass a no-wait for unit tests.</summary>
+        public Func<int, CancellationToken, Task> Delay;
     }
 
     /// <summary>One room on Hawkes Net's relay, outside a browser. Thread-safe: call it from the main thread, read
     /// <see cref="Events"/> and <see cref="TakePoses"/> there.</summary>
     public sealed class HawkesNetClient
     {
-        public const string Version = "0.5.0";
+        public const string Version = "0.6.0";
         const int SendMs = 33, PingMs = 5000;
 
         readonly int handle;
@@ -44,13 +60,16 @@ namespace Hawkes
         string pose;
         string[] extraKeys = new string[0];
         int seq;
-        ClientWebSocket ws;
+        IHawkesNetWire wire;
         double offset;
         readonly Dictionary<string, Peer> peers = new Dictionary<string, Peer>();
         readonly Dictionary<string, string> poses = new Dictionary<string, string>();
         readonly HashSet<string> changed = new HashSet<string>();
         string self = "", host = "";
-        bool away, ready, closed;
+        string resume;
+        string relayUrl;
+        bool away, ready, closed, resuming, draining;
+        int retry;
 
         sealed class Peer { public string id, name; public int ord; public bool away; }
 
@@ -157,59 +176,122 @@ namespace Hawkes
             closed = true;
             try { FlushOnce().Wait(500); } catch { /* best effort */ }
             stop.Cancel();
-            try { ws?.CloseAsync(WebSocketCloseStatus.NormalClosure, "left", CancellationToken.None).Wait(500); } catch { /* gone */ }
+            try { wire?.Dispose(); } catch { /* gone */ }
+            wire = null;
         }
 
         // ------------------------------------------------------------------ the connection
+        // Match JS SDK 1.4.1+: after an unexpected close try one resume; if that resume is refused (410 resume_gone /
+        // proxy 502) or closes before its hello, drop the token and rejoin the same room with a fresh ticket. Backoff
+        // only between full failures (no polling loop: each wait is scheduled from a close or a refused ticket).
 
         async Task Run()
         {
-            int tries = 0;
             while (!stop.IsCancellationRequested && !closed)
             {
-                Dictionary<string, object> t;
-                try { t = await Ticket(); }
-                catch (Exception e)
-                {
-                    if (!ready) { Tell("error", new Dictionary<string, object> { ["reason"] = "ticket", ["data"] = e.Message }); closed = true; return; }
-                    await Wait(Math.Min(30000, 2000 << Math.Min(tries++, 4)));
-                    continue;
-                }
-                var url = NetJson.Str(t, "relayUrl", "");
-                if (string.IsNullOrEmpty(url)) { Tell("error", new Dictionary<string, object> { ["reason"] = "ticket", ["data"] = "no relay in the ticket's answer" }); closed = true; return; }
-                url += (url.Contains("?") ? "&" : "?") + "t=" + Uri.EscapeDataString(NetJson.Str(t, "ticket", "")) + "&want=relay";
-                ws = new ClientWebSocket();
-                ws.Options.AddSubProtocol("hawkes-net.v2");
-                ws.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
+                int closeCode = 0;
+                string closeReason = "";
+                bool opened = false;
                 try
                 {
-                    await ws.ConnectAsync(new Uri(url), stop.Token);
-                    tries = 0;
+                    string url;
+                    if (!string.IsNullOrEmpty(resume) && !string.IsNullOrEmpty(relayUrl))
+                    {
+                        resuming = true;
+                        url = relayUrl + (relayUrl.Contains("?") ? "&" : "?") + "r=" + Uri.EscapeDataString(resume);
+                    }
+                    else
+                    {
+                        resuming = false;
+                        Dictionary<string, object> t;
+                        try { t = await Ticket(); }
+                        catch (Exception e)
+                        {
+                            if (!ready) { Tell("error", new Dictionary<string, object> { ["reason"] = "ticket", ["data"] = e.Message }); closed = true; return; }
+                            // Ticket failure after we were in: backoff, then try again (full failure).
+                            await Wait(draining ? Math.Min(800, 150 << Math.Min(3, retry++)) : 5000);
+                            continue;
+                        }
+                        relayUrl = NetJson.Str(t, "relayUrl", "");
+                        if (string.IsNullOrEmpty(relayUrl)) { Tell("error", new Dictionary<string, object> { ["reason"] = "ticket", ["data"] = "no relay in the ticket's answer" }); closed = true; return; }
+                        resume = null;
+                        url = relayUrl + (relayUrl.Contains("?") ? "&" : "?") + "t=" + Uri.EscapeDataString(NetJson.Str(t, "ticket", "")) + "&want=relay";
+                    }
+                    wire = await OpenWire(new Uri(url), stop.Token);
+                    opened = true;
                     var sender = Task.Run(SendLoop);
                     await ReceiveLoop();
+                    closeCode = wire != null ? wire.CloseCode : 0;
+                    closeReason = wire != null ? (wire.CloseReason ?? "") : "";
                 }
                 catch (Exception e) when (!stop.IsCancellationRequested)
                 {
                     Problem("relay-lost", e.Message);
+                    // Connect refused before any frame (410 resume_gone, 502 while the node comes back): same as a
+                    // resume try that closed before its hello.
+                    if (resuming) { resume = null; resuming = false; }
+                    if (!ready && !opened)
+                    {
+                        if (retry++ < 2) { await Wait(600); continue; }
+                        Tell("error", new Dictionary<string, object> { ["reason"] = "refused", ["data"] = e.Message });
+                        closed = true;
+                        return;
+                    }
+                }
+                finally
+                {
+                    try { wire?.Dispose(); } catch { /* gone */ }
+                    wire = null;
                 }
                 if (closed || stop.IsCancellationRequested) return;
-                var code = ws.CloseStatus.HasValue ? (int)ws.CloseStatus.Value : 0;
-                if (code == 4009) { Tell("problem", new Dictionary<string, object> { ["reason"] = "full", ["data"] = ws.CloseStatusDescription ?? "" }); }
-                if (code == 4003 || code == 4009 || (!ready && code >= 4000))
+                if (closeCode == 4009) { Tell("problem", new Dictionary<string, object> { ["reason"] = "full", ["data"] = closeReason }); }
+                if (closeCode == 4003 || closeCode == 4009 || (!ready && closeCode >= 4000))
                 {
-                    Tell("error", new Dictionary<string, object> { ["reason"] = code == 4009 ? "full" : "refused", ["data"] = ws.CloseStatusDescription ?? "" });
+                    Tell("error", new Dictionary<string, object> { ["reason"] = closeCode == 4009 ? "full" : "refused", ["data"] = closeReason });
                     closed = true;
                     return;
                 }
+                if (!ready)
+                {
+                    if (retry++ < 2) { await Wait(600); continue; }
+                    Tell("error", new Dictionary<string, object> { ["reason"] = "refused", ["data"] = string.IsNullOrEmpty(closeReason) ? ("closed " + closeCode) : closeReason });
+                    closed = true;
+                    return;
+                }
+                // A resume try that closed before its hello: the room is gone — don't resume again.
+                if (resuming) { resume = null; resuming = false; }
+                if (draining) resume = null;
                 Status("reconnecting");
-                await Wait(Math.Min(15000, 1000 << Math.Min(tries++, 4)));
+                int wait = draining
+                    ? Math.Min(800, 150 << Math.Min(3, retry++))
+                    : Math.Min(15000, 500 << Math.Min(5, retry++));
+                await Wait(wait);
             }
         }
 
-        async Task Wait(int ms) { try { await Task.Delay(ms, stop.Token); } catch { /* stopping */ } }
+        async Task Wait(int ms)
+        {
+            try
+            {
+                if (o.Delay != null) await o.Delay(ms, stop.Token);
+                else await Task.Delay(ms, stop.Token);
+            }
+            catch { /* stopping */ }
+        }
+
+        async Task<IHawkesNetWire> OpenWire(Uri uri, CancellationToken ct)
+        {
+            if (o.ConnectWire != null) return await o.ConnectWire(uri, ct);
+            var ws = new ClientWebSocket();
+            ws.Options.AddSubProtocol("hawkes-net.v2");
+            ws.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
+            await ws.ConnectAsync(uri, ct);
+            return new ClientWebSocketWire(ws);
+        }
 
         async Task<Dictionary<string, object>> Ticket()
         {
+            if (o.AskTicket != null) return await o.AskTicket(stop.Token);
             using (var http = new HttpClient { Timeout = TimeSpan.FromSeconds(20) })
             {
                 HttpRequestMessage req;
@@ -246,7 +328,7 @@ namespace Hawkes
         async Task SendLoop()
         {
             double pingAt = 0;
-            while (!stop.IsCancellationRequested && ws != null && ws.State == WebSocketState.Open)
+            while (!stop.IsCancellationRequested && wire != null)
             {
                 try
                 {
@@ -270,31 +352,26 @@ namespace Hawkes
                 if (pose != null) items.Add(pose);
                 queue.Clear(); unreliable.Clear(); pose = null;
             }
-            if (ws == null || ws.State != WebSocketState.Open) return;
+            if (wire == null) return;
             // Bundles of at most 200 items (the relay reads 256).
             for (int i = 0; i < items.Count; i += 200)
             {
                 var part = items.GetRange(i, Math.Min(200, items.Count - i));
-                var bytes = Encoding.UTF8.GetBytes("{\"t\":\"b\",\"m\":[" + string.Join(",", part) + "]}");
+                var text = "{\"t\":\"b\",\"m\":[" + string.Join(",", part) + "]}";
                 await sending.WaitAsync();
-                try { await ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, stop.Token); }
+                try { await wire.SendTextAsync(text, stop.Token); }
                 finally { sending.Release(); }
             }
         }
 
         async Task ReceiveLoop()
         {
-            var buf = new byte[64 * 1024];
-            var msg = new List<byte>();
-            while (ws.State == WebSocketState.Open && !stop.IsCancellationRequested)
+            while (wire != null && !stop.IsCancellationRequested)
             {
-                var r = await ws.ReceiveAsync(new ArraySegment<byte>(buf), stop.Token);
-                if (r.MessageType == WebSocketMessageType.Close) return;
-                for (int i = 0; i < r.Count; i++) msg.Add(buf[i]);
-                if (!r.EndOfMessage) continue;
-                var text = Encoding.UTF8.GetString(msg.ToArray());
-                msg.Clear();
-                if (r.MessageType != WebSocketMessageType.Text) continue; // the binary protocol is the web SDK's
+                string text;
+                try { text = await wire.ReceiveTextAsync(stop.Token); }
+                catch { return; }
+                if (text == null) return;
                 object m;
                 try { m = NetJson.Parse(text); } catch { continue; }
                 try { FromRoom(m); }
@@ -308,6 +385,17 @@ namespace Hawkes
         {
             if (!(raw is Dictionary<string, object> m)) return;
             var t = NetJson.Str(m, "t", "");
+            var c = NetJson.Str(m, "c", "");
+            // Control frames the node pushes without a "t" (drain before a restart): skip the doomed resume.
+            if (string.IsNullOrEmpty(t) && c == "draining")
+            {
+                if (closed || draining) return;
+                draining = true;
+                resume = null;
+                retry = 0;
+                try { wire?.Dispose(); } catch { /* close wakes ReceiveLoop; Run() clears resume and rejoins */ }
+                return;
+            }
             if (t == "b") { foreach (var x in NetJson.Arr(m, "m") ?? new List<object>()) FromRoom(x); return; }
             switch (t)
             {
@@ -385,10 +473,17 @@ namespace Hawkes
 
         void Hello(Dictionary<string, object> m)
         {
+            var tok = NetJson.Str(m, "resume", "");
+            if (!string.IsNullOrEmpty(tok)) resume = tok;
+            retry = 0;
+            resuming = false;
+            draining = false;
             self = NetJson.Str(m, "you", "");
             host = NetJson.Str(m, "host", "");
             var now = NetJson.Num(m, "now");
             if (now > 0 && offset == 0) offset = now - UnixMs();
+            peers.Clear();
+            lock (poses) { poses.Clear(); changed.Clear(); }
             var list = new List<object>();
             int ord = 0;
             foreach (var x in NetJson.Arr(m, "peers") ?? new List<object>())
@@ -402,6 +497,47 @@ namespace Hawkes
             ready = true;
             Status("online");
             if (first) Tell("ready", new Dictionary<string, object> { ["peer"] = self, ["name"] = NetJson.Str(m, "name", o.name), ["transport"] = "relay", ["host"] = host, ["ord"] = (double)ord, ["data"] = NetJson.Write(list) });
+        }
+
+        /// <summary>ClientWebSocket as <see cref="IHawkesNetWire"/> (Editor / desktop).</summary>
+        sealed class ClientWebSocketWire : IHawkesNetWire
+        {
+            readonly ClientWebSocket ws;
+            readonly byte[] buf = new byte[64 * 1024];
+            readonly List<byte> msg = new List<byte>();
+            public ClientWebSocketWire(ClientWebSocket ws) { this.ws = ws; }
+            public int CloseCode => ws.CloseStatus.HasValue ? (int)ws.CloseStatus.Value : 0;
+            public string CloseReason => ws.CloseStatusDescription ?? "";
+            public async Task SendTextAsync(string text, CancellationToken ct)
+            {
+                var bytes = Encoding.UTF8.GetBytes(text);
+                await ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, ct);
+            }
+            public async Task<string> ReceiveTextAsync(CancellationToken ct)
+            {
+                while (ws.State == WebSocketState.Open)
+                {
+                    var r = await ws.ReceiveAsync(new ArraySegment<byte>(buf), ct);
+                    if (r.MessageType == WebSocketMessageType.Close) return null;
+                    for (int i = 0; i < r.Count; i++) msg.Add(buf[i]);
+                    if (!r.EndOfMessage) continue;
+                    var text = Encoding.UTF8.GetString(msg.ToArray());
+                    msg.Clear();
+                    if (r.MessageType != WebSocketMessageType.Text) continue; // binary is the web SDK's
+                    return text;
+                }
+                return null;
+            }
+            public void Dispose()
+            {
+                try
+                {
+                    if (ws.State == WebSocketState.Open || ws.State == WebSocketState.CloseReceived)
+                        ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "", CancellationToken.None).Wait(200);
+                }
+                catch { /* gone */ }
+                try { ws.Dispose(); } catch { /* gone */ }
+            }
         }
 
         Peer AddPeer(Dictionary<string, object> x)

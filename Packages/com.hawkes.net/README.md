@@ -116,7 +116,10 @@ host whose page is away hands the room to a present player, so whatever the host
 
 ```csharp
 lobby.PeerAway += (id, away) => avatars[id].SetDimmed(away);   // or room.OnPeerAway / room.Away
+room.OnPeerBack += id => avatars[id].SetDimmed(false);         // same moment as OnPeerAway(id, false)
 room.OnHost += id => Debug.Log($"host {id} ({room.HostReason})"); // "host away" when handed over
+room.OnReconnecting += () => hud.Show("reconnecting…");
+room.OnReconnected += () => hud.Show("back");
 ```
 
 A game that must keep running while hidden (a turn timer, a fight, a host's simulation others wait on):

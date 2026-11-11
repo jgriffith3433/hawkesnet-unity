@@ -414,9 +414,11 @@ api.scenarios = () => [...baseScenarios().map((s) => (s.id === 'smoke'
 { id: 'nameplates', title: 'World-space nameplates: never mirrored on a 360 orbit, readable on phone, hidden behind a wall', seconds: 75, tags: ['full', 'ui', 'quality'],
   description: 'Joins, opens a second player, waits for window.__hawkesNet.names: occlusion probe (hid behind a wall then shown), a dedicated probe-camera 360 orbit with mirroredFrames=0, every plate scale positive, and screenPx tall enough to read on a 390 px phone. Scenes Names-Meet / Names-Orbit / Names-Occlude for screenshots of unmirrored text.' },
 { id: 'page', title: 'Loading screen (progress, fade, phone fit), playtest hook while loading, demo-root.json, load error card', seconds: 30, tags: ['smoke', 'ui'],
-  description: 'Checks the inline stub put window.hawkesPlaytest up before Unity finished (within 1 s of page start), that ./demo-root.json answers so a deeper path can relocate here, and that a load failure shows the plain error card (via the page helper, same card ?failLoad=1 uses).' }];
+  description: 'Checks the inline stub put window.hawkesPlaytest up before Unity finished (within 1 s of page start), that ./demo-root.json answers so a deeper path can relocate here, and that a load failure shows the plain error card (via the page helper, same card ?failLoad=1 uses).' },
+{ id: 'reconnect', title: 'Reconnect: blip resumes in under 3 s; refused resume rejoins with one fresh ticket', seconds: 75, tags: ['full', 'netcode'],
+  description: 'Joins from the start screen, closes the page socket (a 5 s network blip), and asserts status goes reconnecting then online within 3 s in the same room. Then poisons the resume token and closes again (node-restart / resume_gone path): at most one refused resume, then a fresh ticket, back online. Events: blip-recovered, resume-refused, ticket-rejoined. Package EditMode tests cover the managed client with a fake transport.' }];
 // The scenarios played here rather than by net-playtest.mjs: their own run, panel and report.
-const SIDE = ['start-screen', 'smooth', 'crowd', 'phone', 'page', 'humanoid', 'anim-sync', 'two-players', 'nameplates'];
+const SIDE = ['start-screen', 'smooth', 'crowd', 'phone', 'page', 'humanoid', 'anim-sync', 'two-players', 'nameplates', 'reconnect'];
 
 let sr = null; // the start-screen run
 const r1 = (n) => Math.round(n * 10) / 10;
@@ -1268,6 +1270,88 @@ async function page() {
   sr.progress = 1;
 }
 
+/** Watch which connect URLs the page SDK opens (ticket vs resume) after we wrap WebSocket. */
+function installConnectProbe() {
+  const urls = [];
+  const RealWS = globalThis.WebSocket;
+  if (!RealWS || RealWS.__hnReconnectProbe) return { urls, restore: () => {} };
+  class ProbeWS extends RealWS {
+    constructor(url, protocols) {
+      urls.push(String(url));
+      super(url, protocols);
+    }
+  }
+  ProbeWS.__hnReconnectProbe = true;
+  globalThis.WebSocket = ProbeWS;
+  return { urls, restore: () => { globalThis.WebSocket = RealWS; } };
+}
+
+async function reconnect() {
+  sr.state.scene = 'Reconnect-Blip';
+  srEvent('scene', 'Reconnect-Blip');
+  if (!await srCheck('Connected to Hawkes Net from the start screen', async () => {
+    await joinFromStartScreen();
+    if (!online()) throw new Error('the room did not come online after pressing Join');
+    return 'online';
+  })) return;
+  sr.progress = 0.2;
+  const net = slot()?.net;
+  if (!net?.ws) { sr.problems.push({ severity: 'bug', message: 'no page SDK socket (net.ws) after join' }); return; }
+  const roomName = net.room || net.roomName || slot()?.room || '';
+  const peerBefore = net.id;
+  const statuses = [];
+  const offStatus = typeof net.when === 'function' ? net.when('status', (x) => { statuses.push(x?.status || ''); srEvent('status', x?.status || ''); }) : () => {};
+
+  // Criterion 1: after a drop, back in the same room within 3 s of the network returning (here: socket close = drop ends).
+  if (!await srCheck('After a socket drop the player is back online within 3 s (blip resume)', async () => {
+    await sleep(5000); // the brief's "5 s network drop" before the link returns
+    const t0 = performance.now();
+    try { net.ws.close(); } catch { /* already closing */ }
+    await waitFor(() => net.status === 'reconnecting' || statuses.includes('reconnecting'), 5000, 'status reconnecting after the drop');
+    await waitFor(() => (net.status === 'online' || net.ready === true) && (net.ws?.readyState === 1), 10000, 'back online after the blip');
+    const ms = performance.now() - t0;
+    sr.metrics.blipRecoverMs = Math.round(ms);
+    if (ms > 3000) throw new Error(`back in ${Math.round(ms)} ms (need ≤ 3000)`);
+    if (peerBefore && net.id && net.id !== peerBefore) throw new Error(`peer id changed on a blip resume (${peerBefore} → ${net.id})`);
+    srEvent('blip-recovered', `${Math.round(ms)} ms`);
+    return `${Math.round(ms)} ms, same peer ${net.id || peerBefore}`;
+  })) { try { offStatus(); } catch { /* */ } return; }
+  sr.progress = 0.55;
+
+  sr.state.scene = 'Reconnect-ResumeGone';
+  srEvent('scene', 'Reconnect-ResumeGone');
+  // Criterion 2: node restart path — poison the resume token so one resume is refused, then a fresh ticket.
+  const probe = installConnectProbe();
+  try {
+    if (!await srCheck('A refused resume rejoins with one fresh ticket (no resume retry loop)', async () => {
+      if (typeof net.resume === 'string') net.resume = 'not-a-resume-token';
+      else throw new Error('page SDK has no net.resume to poison (need SDK 1.4.1+)');
+      const t0 = performance.now();
+      try { net.ws?.close(); } catch { /* */ }
+      await waitFor(() => net.status === 'reconnecting' || statuses.includes('reconnecting'), 5000, 'reconnecting after poisoned resume');
+      await waitFor(() => (net.status === 'online' || net.ready === true) && (net.ws?.readyState === 1), 15000, 'back online after refused resume');
+      const ms = performance.now() - t0;
+      const kinds = probe.urls.map((u) => (/[?&]r=/.test(u) ? 'resume' : 'ticket'));
+      // First join already happened before the probe; only post-drop connects are listed.
+      const resumeTries = kinds.filter((k) => k === 'resume').length;
+      const ticketTries = kinds.filter((k) => k === 'ticket').length;
+      sr.metrics.resumeRefusedMs = Math.round(ms);
+      sr.metrics.resumeTries = resumeTries;
+      sr.metrics.ticketTriesAfterDrop = ticketTries;
+      if (resumeTries > 1) throw new Error(`retried a dead resume ${resumeTries} times (kinds: ${kinds.join(',')})`);
+      if (ticketTries < 1) throw new Error(`no fresh ticket after refused resume (kinds: ${kinds.join(',')})`);
+      srEvent('resume-refused', `resumes=${resumeTries}`);
+      srEvent('ticket-rejoined', `${Math.round(ms)} ms`);
+      return `kinds=${kinds.join(',') || '(none visible)'} in ${Math.round(ms)} ms; room still joined`;
+    })) return;
+  } finally {
+    probe.restore();
+    try { offStatus(); } catch { /* */ }
+  }
+  sr.progress = 1;
+  if (roomName) srEvent('log', `room ${roomName}`);
+}
+
 api.start = async (id, options = {}) => {
   if (!SIDE.includes(id)) {
     try { await joinFromStartScreen(); } catch (e) { startLog.push({ at: performance.now(), text: `bot: ${e?.message ?? e}` }); globalThis.__hawkesJoinProblem = e?.message ?? String(e); }
@@ -1287,6 +1371,7 @@ api.start = async (id, options = {}) => {
       : id === 'phone' ? phone()
       : id === 'nameplates' ? nameplates()
       : id === 'page' ? page()
+      : id === 'reconnect' ? reconnect()
       : startScreen());
   } catch (e) { sr.problems.push({ severity: 'bug', message: `bot error: ${e?.message ?? e}` }); }
   finally { if (id === 'smooth' || id === 'crowd' || id === 'humanoid' || id === 'anim-sync' || id === 'phone' || id === 'nameplates') await smoothEnd(); }
