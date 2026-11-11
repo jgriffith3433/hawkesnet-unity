@@ -1,1 +1,1 @@
-- lesson: Scene audit scope — HawkesNetSceneAudit.IsStaticProp must skip everything under an avatar root (limbs are named Torso/Arm.*/Leg.*, not Player); a name check on the renderer alone misses them. Sparse checkout hides Packages/: run git sparse-checkout disable.
+- lesson: Unity exit 139 in the demo build — builds 44-46 segfaulted in shader compile after #31 added IncludeShader for built-in Sprites/Default and GUI/Text Shader; removed them (unproven until a rebuild passes).

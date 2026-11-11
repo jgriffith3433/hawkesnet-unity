@@ -70,9 +70,9 @@ namespace Hawkes.Demo.Editor
         static void Build(string outDir, bool quit)
         {
             IncludeShader("Standard");
-            // Nameplates (HawkesNetNamePlate): TextMesh + translucent Quad, built at run time — keep their shaders.
-            IncludeShader("Sprites/Default");
-            IncludeShader("GUI/Text Shader");
+            // Nameplates (HawkesNetNamePlate) need no included shader: the font carries its own material, and the
+            // backing falls back to Standard (fade mode). Including Sprites/Default and GUI/Text Shader here made
+            // Unity segfault (exit 139) while compiling shaders in the WebGL build (demo 44-46).
             // Bake the RobotExpressive humanoid + Animator into package Resources before the player build
             // (cloud batchmode does not run InitializeOnLoad delayCalls in time).
             if (!Hawkes.Editor.HawkesNetAvatarBake.Ensure())

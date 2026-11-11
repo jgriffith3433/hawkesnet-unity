@@ -11,7 +11,7 @@ namespace Hawkes
     /// copy the camera's rotation each <see cref="LateUpdate"/> (never <c>LookAt</c>, never a negative scale), scale up
     /// on a phone so they stay readable at 390 px, and hide when a wall sits between the camera and the plate.
     /// Built at run time (no TextMeshPro / uGUI package dependency): TextMesh + a translucent Quad; the demo WebGL
-    /// build must keep <c>GUI/Text Shader</c> and <c>Sprites/Default</c> in Always Included Shaders.
+    /// build need not include any shader: the backing uses Sprites/Default when present, else Standard in fade mode.
     /// </summary>
     public sealed class HawkesNetNamePlate : MonoBehaviour
     {
@@ -241,6 +241,16 @@ namespace Hawkes
                 var sh = Shader.Find("Sprites/Default") ?? Shader.Find("Unlit/Transparent") ?? Shader.Find("Standard");
                 sharedBack = new Material(sh);
                 sharedBack.color = new Color(0f, 0f, 0f, 0.55f);
+                if (sh.name == "Standard")
+                {
+                    // Standard "Fade" mode, so the backing stays translucent when no sprite shader is in the build.
+                    sharedBack.SetFloat("_Mode", 2f);
+                    sharedBack.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                    sharedBack.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                    sharedBack.SetInt("_ZWrite", 0);
+                    sharedBack.EnableKeyword("_ALPHABLEND_ON");
+                    sharedBack.renderQueue = 3000;
+                }
             }
             if (sharedFont == null)
                 sharedFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf")
