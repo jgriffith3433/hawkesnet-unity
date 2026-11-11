@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text;
 using UnityEngine;
 using Hawkes;
@@ -14,6 +15,10 @@ namespace Hawkes.Samples
     /// velocity (not raw packets); emote and jump counts ride in the pose Extra. A capsule ground probe lands Jump →
     /// Land → Locomotion on slopes and steps. Put it on an empty GameObject in an empty scene, set Project, build for
     /// WebGL and open two tabs. Add ?lag=150 (and &amp;jitter=30) to feel a slow connection.
+    /// A dropped connection is shown, not hidden: a small banner inside the screen's safe area says "Reconnecting…" while
+    /// the SDK gets the player back (OnReconnecting) and "Back in the room" after (OnReconnected), the local name and
+    /// colour never change, and a remote whose connection dropped (the room marks it away for its grace period) stays as
+    /// a faded ghost with an "(away)" tag instead of vanishing.
     /// </summary>
     public sealed class HawkesNetAvatarsSample : MonoBehaviour
     {
@@ -58,7 +63,15 @@ namespace Hawkes.Samples
             public float AirWhileGrounded;
             public float Vy;
             public bool Jumping;
+            public bool Ghost;
+            public Renderer[] Renderers;
+            public Material[] Materials;
         }
+
+        // The connection as the player sees it: online, getting back ("Reconnecting…"), or just back (shown a moment).
+        enum Link { Online, Reconnecting, Back }
+        const float BackSeconds = 2.5f;
+        const float GhostAlpha = 0.4f;
 
         Transform player;
         HawkesNetAvatars avatars;
@@ -68,7 +81,13 @@ namespace Hawkes.Samples
         readonly Dictionary<string, View> views = new Dictionary<string, View>();
         readonly Style style = new Style();
         readonly StringBuilder animBuf = new StringBuilder(512);
-        GUIStyle bubbleStyle, hudStyle;
+        GUIStyle bubbleStyle, hudStyle, bannerStyle;
+        Texture2D bannerBack;
+        Link link = Link.Online;
+        float backUntil;
+        bool everOnline;
+        HawkesNetRoom hookedRoom;
+        string bridgeShown = "";
 
         static Material MakeMaterial(Color color)
         {
@@ -153,6 +172,7 @@ namespace Hawkes.Samples
             touch = gameObject.AddComponent<HawkesNetTouchControls>();
             touch.StartScreen = start;
             gameObject.SetActive(true);
+            avatars.Lobby.Joined += OnJoined;
 
             // World-space name above the head (quality rule 1): camera-copy billboard, soft plate, occlusion.
             me.NamePlate = HawkesNetNamePlate.Attach(player, avatars.PlayerName + " (you)", me.Color);
@@ -341,9 +361,7 @@ namespace Hawkes.Samples
                 }
                 if (r.Object)
                 {
-                    string plateName = r.Name;
-                    if (plateName.Length == 0 && room != null) room.Peers.TryGetValue(kv.Key, out plateName);
-                    if (string.IsNullOrEmpty(plateName)) plateName = "Player";
+                    string plateName = PlateLabel(kv.Key, r, room);
                     if (v.NamePlate == null) v.NamePlate = HawkesNetNamePlate.Attach(r.Object.transform, plateName, v.HasColor ? v.Color : Color.white);
                     else v.NamePlate.Set(plateName, v.HasColor ? v.Color : Color.white);
                 }
@@ -360,12 +378,11 @@ namespace Hawkes.Samples
                     seenHues.Add(HueOf(col));
                     if (v.NamePlate != null)
                     {
-                        string plateName = r.Name;
-                        if (plateName.Length == 0 && room != null) room.Peers.TryGetValue(kv.Key, out plateName);
-                        if (string.IsNullOrEmpty(plateName)) plateName = "Player";
-                        v.NamePlate.Set(plateName, col);
+                        v.NamePlate.Set(PlateLabel(kv.Key, r, room), col);
                     }
                 }
+                // A remote whose connection dropped is away for the room's grace period: a faded ghost, not gone.
+                if (r.Object) SetGhost(v, r.Object.transform, room != null && room.Away.Contains(kv.Key));
                 if (v.Seen < 0) v.Seen = s.n;
                 else if (s.n != v.Seen) { v.Seen = s.n; Play(v, s.e); }
                 if (v.SeenJump < 0) v.SeenJump = s.j;
@@ -416,6 +433,155 @@ namespace Hawkes.Samples
             }
 
             ReportAnim();
+            TickLink();
+            PublishBridge(room);
+        }
+
+        // The name over a remote's head, with " (away)" while the room has it away (a dropped connection or a hidden tab).
+        string PlateLabel(string id, HawkesNetAvatars.Remote r, HawkesNetRoom room)
+        {
+            string name = r.Name;
+            if (name.Length == 0 && room != null) room.Peers.TryGetValue(id, out name);
+            if (string.IsNullOrEmpty(name)) name = "Player";
+            return room != null && room.Away.Contains(id) ? name + " (away)" : name;
+        }
+
+        // ---- A dropped player is shown, not hidden ---------------------------------------------------------------------
+
+        void OnJoined(HawkesNetRoom room)
+        {
+            everOnline = true;
+            if (room != hookedRoom)
+            {
+                hookedRoom = room;
+                room.OnReconnecting += () => SetLink(Link.Reconnecting);
+                room.OnReconnected += () => SetLink(Link.Back);
+            }
+            if (link == Link.Reconnecting) SetLink(Link.Back); // the lobby joined a new room after losing the old one
+        }
+
+        void SetLink(Link next)
+        {
+            if (link == next) return;
+            link = next;
+            backUntil = next == Link.Back ? Time.realtimeSinceStartup + BackSeconds : 0f;
+        }
+
+        void TickLink()
+        {
+            var lobby = avatars.Lobby;
+            // The room was lost and the lobby is waiting to join it again: that is still "Reconnecting…".
+            if (link == Link.Online && everOnline && lobby.Room == null && lobby.RetryIn > 0f) SetLink(Link.Reconnecting);
+            if (link == Link.Back && Time.realtimeSinceStartup >= backUntil) SetLink(Link.Online);
+        }
+
+        string BannerText => link == Link.Reconnecting ? "Reconnecting\u2026" : link == Link.Back ? "Back in the room" : "";
+
+        // The banner's box, in screen pixels from the top left, kept inside Screen.safeArea (a notch, a home bar).
+        Rect BannerRect()
+        {
+            float ui = Ui, margin = 8f * ui;
+            var safe = Screen.safeArea;
+            float left = safe.xMin, right = safe.xMax, top = Screen.height - safe.yMax;
+            float w = Mathf.Min(230f * ui, Mathf.Max(40f, right - left - 2f * margin)), h = 34f * ui;
+            return new Rect(left + (right - left - w) * 0.5f, top + margin, w, h);
+        }
+
+        static string Esc(string t) => (t ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"");
+
+        // For a tool in the page: window.__hawkesNet.touch.banner (text and box, fractions of the canvas), .link, .me, .ghosts.
+        void PublishBridge(HawkesNetRoom room)
+        {
+            var b = animBuf.Clear();
+            string text = start != null && start.Blocking ? "" : BannerText;
+            b.Append("{\"link\":\"").Append(link.ToString().ToLowerInvariant()).Append("\",\"me\":{\"name\":\"")
+             .Append(Esc(avatars.PlayerName)).Append("\",\"color\":\"").Append(style.c).Append("\"},\"banner\":");
+            if (text.Length == 0) b.Append("null");
+            else
+            {
+                var r = BannerRect();
+                b.Append("{\"text\":\"").Append(Esc(text)).Append("\",\"x\":").Append((r.x / Screen.width).ToString("0.####", CultureInfo.InvariantCulture))
+                 .Append(",\"y\":").Append((r.y / Screen.height).ToString("0.####", CultureInfo.InvariantCulture))
+                 .Append(",\"w\":").Append((r.width / Screen.width).ToString("0.####", CultureInfo.InvariantCulture))
+                 .Append(",\"h\":").Append((r.height / Screen.height).ToString("0.####", CultureInfo.InvariantCulture)).Append('}');
+            }
+            b.Append(",\"ghosts\":[");
+            bool first = true;
+            foreach (var kv in views)
+            {
+                if (!kv.Value.Ghost || !avatars.Remotes.ContainsKey(kv.Key)) continue;
+                string n = avatars.Remotes[kv.Key].Name;
+                if (n.Length == 0 && room != null) room.Peers.TryGetValue(kv.Key, out n);
+                if (!first) b.Append(',');
+                first = false;
+                b.Append("{\"id\":\"").Append(Esc(kv.Key)).Append("\",\"name\":\"").Append(Esc(n)).Append("\",\"color\":\"")
+                 .Append(kv.Value.HasColor ? "#" + ColorUtility.ToHtmlStringRGB(kv.Value.Color) : "").Append("\"}");
+            }
+            b.Append("]}");
+            string json = b.ToString();
+            if (json == bridgeShown) return;
+            bridgeShown = json;
+            HawkesNet.ShowedTouch(json);
+        }
+
+        // Faded and tagged: translucent where the shader can be (Standard, URP Lit), and always washed toward grey, so it
+        // reads as a ghost even where a shader has no transparent mode.
+        void SetGhost(View v, Transform root, bool on)
+        {
+            bool changed = on != v.Ghost;
+            if (changed)
+            {
+                v.Ghost = on;
+                if (v.Renderers == null) v.Renderers = root.GetComponentsInChildren<Renderer>(true);
+                if (v.Materials == null)
+                {
+                    var list = new List<Material>();
+                    foreach (var r in v.Renderers) if (r) foreach (var m in r.materials) if (m) list.Add(m);
+                    v.Materials = list.ToArray();
+                }
+                foreach (var m in v.Materials) SetFade(m, on);
+            }
+            if (!on && !changed) return; // opaque and untouched
+            var tint = v.HasColor ? v.Color : Color.gray;
+            if (on) { tint = Color.Lerp(tint, new Color(0.8f, 0.82f, 0.88f), 0.45f); tint.a = GhostAlpha; }
+            else tint.a = 1f;
+            var block = new MaterialPropertyBlock();
+            foreach (var r in v.Renderers)
+            {
+                if (!r) continue;
+                r.GetPropertyBlock(block);
+                block.SetColor("_Color", tint);
+                block.SetColor("_BaseColor", tint);
+                block.SetColor("_MainColor", tint);
+                block.SetColor("baseColorFactor", tint);
+                r.SetPropertyBlock(block);
+            }
+        }
+
+        static void SetFade(Material m, bool on)
+        {
+            if (m.HasProperty("_Mode")) // Built-in Standard: Fade (2) or Opaque (0)
+            {
+                m.SetFloat("_Mode", on ? 2f : 0f);
+                m.SetInt("_SrcBlend", (int)(on ? UnityEngine.Rendering.BlendMode.SrcAlpha : UnityEngine.Rendering.BlendMode.One));
+                m.SetInt("_DstBlend", (int)(on ? UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha : UnityEngine.Rendering.BlendMode.Zero));
+                m.SetInt("_ZWrite", on ? 0 : 1);
+                m.DisableKeyword("_ALPHATEST_ON");
+                m.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+                if (on) m.EnableKeyword("_ALPHABLEND_ON"); else m.DisableKeyword("_ALPHABLEND_ON");
+                m.renderQueue = on ? 3000 : -1;
+            }
+            else if (m.HasProperty("_Surface")) // URP Lit: Transparent (1) or Opaque (0)
+            {
+                m.SetFloat("_Surface", on ? 1f : 0f);
+                m.SetFloat("_Blend", 0f);
+                m.SetFloat("_SrcBlend", on ? (float)UnityEngine.Rendering.BlendMode.SrcAlpha : 1f);
+                m.SetFloat("_DstBlend", on ? (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha : 0f);
+                m.SetFloat("_ZWrite", on ? 0f : 1f);
+                if (on) m.EnableKeyword("_SURFACE_TYPE_TRANSPARENT"); else m.DisableKeyword("_SURFACE_TYPE_TRANSPARENT");
+                m.SetOverrideTag("RenderType", on ? "Transparent" : "Opaque");
+                m.renderQueue = on ? 3000 : -1;
+            }
         }
 
         void IntegrateLocal()
@@ -539,6 +705,7 @@ namespace Hawkes.Samples
                 }
             }
 
+            DrawBanner(ui);
             if (Event.current.type != EventType.Repaint) return;
             var cam = Camera.main;
             if (!cam) return;
@@ -553,6 +720,23 @@ namespace Hawkes.Samples
                 if (!r.Object || !r.Object.activeSelf || !views.TryGetValue(kv.Key, out var v)) continue;
                 EmoteBubble(cam, r.Object.transform, v);
             }
+        }
+
+        void DrawBanner(float ui)
+        {
+            string text = start != null && start.Blocking ? "" : BannerText;
+            if (text.Length == 0 || Event.current.type != EventType.Repaint) return;
+            if (bannerBack == null) { bannerBack = new Texture2D(1, 1); bannerBack.SetPixel(0, 0, Color.white); bannerBack.Apply(); }
+            if (bannerStyle == null)
+                bannerStyle = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold, clipping = TextClipping.Clip };
+            bannerStyle.fontSize = Mathf.RoundToInt(16f * ui);
+            bannerStyle.normal.textColor = Color.white;
+            var box = BannerRect();
+            var old = GUI.color;
+            GUI.color = link == Link.Reconnecting ? new Color(0.62f, 0.38f, 0.04f, 0.92f) : new Color(0.1f, 0.45f, 0.24f, 0.92f);
+            GUI.DrawTexture(box, bannerBack);
+            GUI.color = old;
+            GUI.Label(box, text, bannerStyle);
         }
 
         void EmoteBubble(Camera cam, Transform who, View v)

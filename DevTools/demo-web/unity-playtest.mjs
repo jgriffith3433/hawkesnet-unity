@@ -409,8 +409,10 @@ api.scenarios = () => [...baseScenarios().map((s) => (s.id === 'smoke'
   description: 'Joins from the start screen, checks the baked RobotExpressive humanoid loaded (console "[HawkesNetAvatar] humanoid ready"), feet on the ground (pose y ≈ 0), walks then runs with real keys (ground speed rises), opens a second player and walks into it so soft push-apart keeps them ≥0.55 m apart. Scenes Humanoid-Idle / Humanoid-Walk / Humanoid-Push for footage of the tinted figure.' },
 { id: 'anim-sync', title: 'Remote Animator from track velocity; emotes and jumps sync; landings never stick airborne', seconds: 90, tags: ['full', 'avatars', 'animation'],
   description: 'Joins, opens a second player, walks/runs with real keys (remote ground speed from HawkesNetTrack), jumps with Space both ways (Extra j), plays emotes 1–3 both ways, and fails on window.__hawkesNet.anim quality probes: stuck-airborne >0.3s, state/motion mismatch, planted-foot slide. Scenes Anim-Walk / Anim-Jump / Anim-Emote.' },
-{ id: 'two-players', title: 'Real browsers on one ?room= find each other, move, message, and pass animation quality probes', seconds: 90, tags: ['full', 'multiplayer', 'animation'],
-  description: 'Two real browsers on one ?room= meet, move and trade messages (same as the shared net-playtest two-players), then each samples window.__hawkesNet.anim every frame: stuck-airborne, state/motion mismatch and foot-slide fail above thresholds on local and remote characters.' },
+{ id: 'two-players', title: 'Real browsers on one ?room= find each other, move, message, pass animation quality probes, and survive a 5 s drop of one', seconds: 130, tags: ['full', 'multiplayer', 'animation'],
+  description: 'Two real browsers on one ?room= meet, move and trade messages (same as the shared net-playtest two-players), then each samples window.__hawkesNet.anim every frame: stuck-airborne, state/motion mismatch and foot-slide fail above thresholds on local and remote characters. Last leg: the later browser (B) loses its network for 5 s: it must show Reconnecting within 1 s and Back in the room after, report recoveryMs under 2000 with the same name and colour (identityMatch 1); the other browser (A) must show B ghosted (faded, tagged away) rather than gone.' },
+{ id: 'drop-recover', title: 'Drop and recover: a 5 s network drop shows Reconnecting then Back in the room, same name and colour, others see the player away not gone', seconds: 90, tags: ['full', 'multiplayer', 'netcode', 'phone'],
+  description: 'One browser (works at the phone size 390x844 with touch: it joins by tapping Join) plus the bot as a second player. The Unity player\'s network is cut for 5 s: the banner must say Reconnecting within 1 s (inside the safe area), then Back in the room after the network returns; recoveryMs must be under 2000 with the same name and colour (identityMatch 1); the bot must see the player away, never gone. Then the bot drops for 5 s: the Unity page must show its avatar ghosted with its name and away, not removed, and normal again after. Metrics: dropBannerMs, recoveryMs, backBannerMs, identityMatch, bannerInsideSafeArea, ghostShownMs, ghostHeldMs.' },
 { id: 'nameplates', title: 'World-space nameplates: never mirrored on a 360 orbit, readable on phone, hidden behind a wall', seconds: 75, tags: ['full', 'ui', 'quality'],
   description: 'Joins, opens a second player, waits for window.__hawkesNet.names: occlusion probe (hid behind a wall then shown), a dedicated probe-camera 360 orbit with mirroredFrames=0, every plate scale positive, and screenPx tall enough to read on a 390 px phone. Scenes Names-Meet / Names-Orbit / Names-Occlude for screenshots of unmirrored text.' },
 { id: 'page', title: 'Loading screen (progress, fade, phone fit), playtest hook while loading, demo-root.json, load error card', seconds: 30, tags: ['smoke', 'ui'],
@@ -418,7 +420,7 @@ api.scenarios = () => [...baseScenarios().map((s) => (s.id === 'smoke'
 { id: 'reconnect', title: 'Reconnect: blip resumes in under 3 s; refused resume rejoins with one fresh ticket', seconds: 75, tags: ['full', 'netcode'],
   description: 'Joins from the start screen, closes the page socket (a 5 s network blip), and asserts status goes reconnecting then online within 3 s in the same room. Then poisons the resume token and closes again (node-restart / resume_gone path): at most one refused resume, then a fresh ticket, back online. Events: blip-recovered, resume-refused, ticket-rejoined. Package EditMode tests cover the managed client with a fake transport.' }];
 // The scenarios played here rather than by net-playtest.mjs: their own run, panel and report.
-const SIDE = ['start-screen', 'smooth', 'crowd', 'phone', 'page', 'humanoid', 'anim-sync', 'two-players', 'nameplates', 'reconnect'];
+const SIDE = ['start-screen', 'smooth', 'crowd', 'phone', 'page', 'humanoid', 'anim-sync', 'two-players', 'nameplates', 'reconnect', 'drop-recover'];
 
 let sr = null; // the start-screen run
 const r1 = (n) => Math.round(n * 10) / 10;
@@ -980,6 +982,7 @@ async function twoPlayersUnity() {
     return `${others().length + 1} players`;
   })) return;
   sr.progress = 0.35;
+  const ghostWatch = watchGhosts();
 
   clearAnimLog();
   // Keep moving so the other browser sees motion; sample anim quality the whole time.
@@ -1041,9 +1044,252 @@ async function twoPlayersUnity() {
     srEvent('quality', `samples ${q.samples}, slide ${q.maxSlide.toFixed(2)}, airG ${q.maxAirG.toFixed(2)}`);
     return `samples ${q.samples}, slide≤${SLIDE_MAX}, airG≤${AIR_G_MAX}`;
   });
+  sr.progress = 0.85;
+  // The drop leg: B (the later id) loses its network for 5 s and comes back; A sees B ghosted with 'away'.
+  srEvent('phase', 'drop leg: the later player drops for 5 s');
+  try { await dropLegTwoBrowsers(net, other, ghostWatch); } finally { ghostWatch.stop(); }
   sr.progress = 1;
   await sleep(2000); // let the other browser finish its own checks
   void drive;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// "drop-recover": a player who drops for 5 s is back within 2 s with the same name and colour, and the others see them away,
+// not gone. The sample (HawkesNetAvatarsSample) tells the page what it shows through HawkesNet.ShowedTouch:
+// window.__hawkesNet.touch.{link, me:{name,color}, banner:{text,x,y,w,h} (fractions of the canvas), ghosts:[{id,name,color}]}.
+const dropState = () => globalThis.__hawkesNet?.touch ?? {};
+const DROP_MS = 5000;           // how long the network is gone
+const BANNER_WITHIN_MS = 1000;  // "Reconnecting…" is up this soon after the drop
+const RECOVER_UNDER_MS = 2000;  // back in the room this soon after the network returns
+
+/** A network outage in the page: every WebSocket opened while it lasts is held (no packets), and let through on restore(),
+ *  as TCP does when the network comes back. Sockets opened before are untouched until dropNow() closes the one given. */
+function makeOutage() {
+  const Real = globalThis.WebSocket;
+  const held = [];
+  let down = false;
+  class HeldWS {
+    constructor(url, protocols) {
+      this.url = String(url); this.protocols = protocols; this._bt = 'blob';
+      this.onopen = this.onmessage = this.onclose = this.onerror = null;
+      this._real = null; this._closed = false;
+      if (down) held.push(this); else this._open();
+    }
+    get binaryType() { return this._bt; }
+    set binaryType(v) { this._bt = v; if (this._real) this._real.binaryType = v; }
+    get readyState() { return this._real ? this._real.readyState : this._closed ? 3 : 0; }
+    get protocol() { return this._real ? this._real.protocol : ''; }
+    get bufferedAmount() { return this._real ? this._real.bufferedAmount : 0; }
+    _open() {
+      if (this._closed) return;
+      const w = this._real = new Real(this.url, this.protocols);
+      w.binaryType = this._bt;
+      w.onopen = (e) => this.onopen?.(e);
+      w.onmessage = (e) => this.onmessage?.(e);
+      w.onerror = (e) => this.onerror?.(e);
+      w.onclose = (e) => this.onclose?.(e);
+    }
+    send(d) { if (this._real) this._real.send(d); }
+    close(code, reason) {
+      if (this._real) return this._real.close(code, reason);
+      this._closed = true;
+      const i = held.indexOf(this); if (i >= 0) held.splice(i, 1);
+      setTimeout(() => this.onclose?.({ code: code || 1000, reason: reason || '', wasClean: true }), 0);
+    }
+  }
+  return {
+    /** The network goes: close this player's socket and hold what it tries next. */
+    drop(sock) { down = true; globalThis.WebSocket = HeldWS; try { sock.close(); } catch { /* already closing */ } },
+    /** The network is back: held sockets connect now. */
+    restore() { down = false; for (const h of held.splice(0)) h._open(); },
+    done() { down = false; if (globalThis.WebSocket === HeldWS) globalThis.WebSocket = Real; },
+    held: () => held.length,
+  };
+}
+
+/** The CSS safe-area insets (a phone's notch and home bar), in px. 0 where the browser has none. */
+function safeInsets() {
+  const d = document.createElement('div');
+  d.style.cssText = 'position:fixed;left:0;top:0;visibility:hidden;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)';
+  document.body.appendChild(d);
+  const cs = getComputedStyle(d);
+  const o = { top: parseFloat(cs.paddingTop) || 0, right: parseFloat(cs.paddingRight) || 0, bottom: parseFloat(cs.paddingBottom) || 0, left: parseFloat(cs.paddingLeft) || 0 };
+  d.remove();
+  return o;
+}
+
+/** Watches window.__hawkesNet.touch.ghosts: which remotes were shown ghosted, from when to when. */
+function watchGhosts() {
+  const seen = {}; // id -> { name, first, last, gone, samples }
+  const timer = setInterval(() => {
+    const now = performance.now(), list = dropState().ghosts ?? [];
+    const ids = new Set(list.map((g) => g.id));
+    for (const g of list) { const e = seen[g.id] ?? (seen[g.id] = { name: g.name, first: now, last: now, gone: null, samples: 0 }); e.last = now; e.gone = null; e.samples++; e.name = g.name; }
+    for (const id of Object.keys(seen)) if (!ids.has(id) && seen[id].gone === null) seen[id].gone = now;
+  }, 50);
+  return { seen, stop: () => clearInterval(timer) };
+}
+
+/** This page's Unity player drops for DROP_MS, comes back. Checks the banner, the recovery time and that the name and colour
+ *  are the same. Returns what it measured. */
+async function dropSelf(net, outage) {
+  const me0 = JSON.parse(JSON.stringify(dropState().me ?? {}));
+  const id0 = net.id, color0 = sentExtra?.c ?? me0.color ?? '';
+  if (!me0.name) throw new Error('the game did not report who the player is (window.__hawkesNet.touch.me)');
+  const t0 = performance.now();
+  outage.drop(net.ws);
+  srEvent('dropped', `network gone for ${DROP_MS / 1000} s`);
+  await waitFor(() => dropState().banner?.text?.startsWith('Reconnecting'), BANNER_WITHIN_MS + 4000, 'the "Reconnecting…" banner');
+  const bannerMs = Math.round(performance.now() - t0);
+  const r = dropState().banner;
+  srEvent('banner', `Reconnecting… up ${bannerMs} ms after the drop`);
+  sr.metrics.dropBannerMs = bannerMs;
+  // The banner box, from the game, must be inside the screen and its safe area.
+  const cv = document.querySelector('canvas').getBoundingClientRect(), ins = safeInsets();
+  const box = { l: cv.left + r.x * cv.width, t: cv.top + r.y * cv.height, r: cv.left + (r.x + r.w) * cv.width, b: cv.top + (r.y + r.h) * cv.height };
+  const inside = box.l >= ins.left - 0.5 && box.t >= ins.top - 0.5 && box.r <= innerWidth - ins.right + 0.5 && box.b <= innerHeight - ins.bottom + 0.5;
+  Object.assign(sr.metrics, { bannerBox: `${Math.round(box.l)},${Math.round(box.t)} ${Math.round(box.r - box.l)}x${Math.round(box.b - box.t)}`, bannerInsideSafeArea: inside ? 1 : 0, viewport: `${innerWidth}x${innerHeight}` });
+  const left = DROP_MS - (performance.now() - t0);
+  if (left > 0) await sleep(left);
+  if (net.status === 'online' && net.ws?.readyState === 1) throw new Error('the connection came back while the network was meant to be down');
+  const t1 = performance.now();
+  outage.restore();
+  srEvent('restored', 'network back');
+  await waitFor(() => (net.status === 'online' || net.ready === true) && net.ws?.readyState === 1, 15000, 'back online after the network returned');
+  const recoveryMs = Math.round(performance.now() - t1);
+  await waitFor(() => dropState().banner?.text === 'Back in the room', 3000, 'the "Back in the room" banner');
+  const backMs = Math.round(performance.now() - t1);
+  srEvent('banner', `Back in the room ${backMs} ms after the network returned`);
+  const me1 = dropState().me ?? {}, color1 = sentExtra?.c ?? me1.color ?? '';
+  const same = me1.name === me0.name && me1.color === me0.color && color1 === color0;
+  Object.assign(sr.metrics, { recoveryMs, backBannerMs: backMs, identityMatch: same ? 1 : 0, peerSame: net.id === id0 ? 1 : 0 });
+  srEvent('recovered', `${recoveryMs} ms, name "${me1.name}" colour ${me1.color} (${same ? 'same as before' : `was "${me0.name}" ${me0.color}`})`);
+  return { recoveryMs, backMs, same, inside, me0, me1, bannerMs };
+}
+
+function dropChecks(d) {
+  return [
+    ['A dropped client shows Reconnecting within 1 s and Back in the room after recovery', () => {
+      if (d.bannerMs > BANNER_WITHIN_MS) throw new Error(`Reconnecting showed ${d.bannerMs} ms after the drop (need ≤ ${BANNER_WITHIN_MS})`);
+      return `Reconnecting ${d.bannerMs} ms after the drop, Back in the room ${d.backMs} ms after the network returned`;
+    }],
+    ['The recovery takes under 2000 ms and the player keeps its name and colour', () => {
+      if (d.recoveryMs >= RECOVER_UNDER_MS) throw new Error(`back after ${d.recoveryMs} ms (need < ${RECOVER_UNDER_MS})`);
+      if (!d.same) throw new Error(`identity changed: "${d.me0.name}" ${d.me0.color} became "${d.me1.name}" ${d.me1.color}`);
+      return `recovery ${d.recoveryMs} ms, "${d.me1.name}" ${d.me1.color} unchanged`;
+    }],
+    ['The banner is fully inside the screen and its safe area', () => {
+      if (!d.inside) throw new Error(`the banner box ${sr.metrics.bannerBox} is outside the safe area of ${sr.metrics.viewport}`);
+      return `banner ${sr.metrics.bannerBox} in ${sr.metrics.viewport}`;
+    }],
+  ];
+}
+
+/** The observer's side: this page's Unity player stays; `id` (another player) drops. Its avatar must be ghosted with its name
+ *  (not removed) while it is away, and normal again after it is back. */
+async function seeGhost(id, ghosts, { dropAt = 0 } = {}) {
+  const t0 = dropAt || performance.now();
+  await waitFor(() => ghosts.seen[id] && ghosts.seen[id].first >= t0 - 100, 60000, 'the dropped player to show as a ghost (faded, away)');
+  const e = ghosts.seen[id];
+  const shownMs = Math.round(e.first - t0);
+  await waitFor(() => e.gone !== null, 30000, 'the ghost to clear after the player came back');
+  const heldMs = Math.round(e.gone - e.first);
+  srEvent('ghost', `${e.name || id} shown ghosted (away) ${shownMs} ms after the drop, for ${heldMs} ms, then back`);
+  Object.assign(sr.metrics, { ghostShownMs: shownMs, ghostHeldMs: heldMs });
+  return { name: e.name, shownMs, heldMs };
+}
+
+async function dropRecover(opts = {}) {
+  sr.state.scene = 'Drop-Recover';
+  srEvent('scene', 'Drop-Recover');
+  const touchRun = innerWidth <= 500;
+  if (touchRun) ensurePhoneTouchQuery();
+  if (!await srCheck('Connected to Hawkes Net from the start screen', async () => {
+    if (touchRun) {
+      await waitFor(() => touchState()?.form?.join, 120000, 'the Join button to be shown (the game reports its buttons)');
+      await tapForm('join');
+      srEvent('tap', 'Join');
+      await waitFor(online, 40000, 'the room to come online after tapping Join');
+    } else await joinFromStartScreen();
+    if (!online()) throw new Error('the room did not come online after pressing Join');
+    return touchRun ? 'online, joined by touch' : 'online';
+  })) return;
+  sr.progress = 0.15;
+  const net = slot().net;
+  main();
+  await waitFor(() => sent && dropState().me?.name, 10000, 'the Unity player to send its place and report its name');
+  const ghosts = watchGhosts();
+  const outage = makeOutage();
+  let bot = null, tick = null;
+  try {
+    // The second player (the bot): sees the Unity player go away and come back, and is the one the Unity page sees ghosted.
+    if (!await srCheck('A second player joined the same room', async () => {
+      bot = await openBotPlayer();
+      const ms = await waitFor(() => (bot.ready === true || bot.status === 'online') && net.peers.has(bot.id), 15000, 'both players to see each other');
+      tick = setInterval(() => { try { bot.pose([-3, AVATAR_Y, 3], 0); } catch { /* left */ } }, 100);
+      await waitFor(() => slot()?.poses?.[bot.id], 10000, 'Unity to receive the second player\'s place');
+      return `${Math.round(ms)} ms`;
+    })) return;
+    sr.progress = 0.3;
+
+    // Leg 1: the Unity player is client B. It drops; the bot sees it away, not gone; then it is back.
+    srEvent('phase', `the Unity player drops for ${DROP_MS / 1000} s`);
+    let seenAway = 0, seenGone = false;
+    const unityId = net.id;
+    const watch = setInterval(() => { const p = bot.peers.get(unityId); if (!p) seenGone = true; else if (p.away) seenAway++; }, 50);
+    let d = null;
+    try { d = await dropSelf(net, outage); } catch (e) { sr.problems.push({ severity: 'bug', message: `drop: ${e?.message ?? e}` }); srEvent('fail', String(e?.message ?? e)); }
+    await sleep(500);
+    clearInterval(watch);
+    sr.progress = 0.6;
+    if (d) for (const [text, fn] of dropChecks(d)) await srCheck(text, async () => fn());
+    await srCheck("The other client sees the dropped player away (ghosted), not gone, and present again after", async () => {
+      if (seenGone) throw new Error('the room dropped the player from its list during a 5 s drop');
+      if (seenAway < 10) throw new Error(`the other client saw the player away for only ${seenAway * 50} ms`);
+      if (bot.peers.get(unityId)?.away) throw new Error('the player is still away after it was back');
+      return `away for about ${seenAway * 50} ms, then present`;
+    });
+    sr.progress = 0.75;
+
+    // Leg 2: the Unity player is client A. The bot drops; the Unity page shows the bot's avatar ghosted with its name, then normal.
+    srEvent('phase', `the other player drops for ${DROP_MS / 1000} s`);
+    const botId = bot.id, tb = performance.now();
+    outage.drop(bot.ws);
+    await sleep(DROP_MS);
+    outage.restore();
+    srEvent('restored', 'the other player\'s network back');
+    await srCheck("The dropped avatar is shown ghosted with its name and 'away', not removed, then returns to normal", async () => {
+      const g = await seeGhost(botId, ghosts, { dropAt: tb });
+      if (!slot()?.poses?.[botId]) throw new Error('the dropped player\'s avatar was removed (no pose in the bridge)');
+      if (g.shownMs > 3000) throw new Error(`it showed as away only ${g.shownMs} ms after the drop`);
+      return `"${g.name}" ghosted ${g.shownMs} ms after the drop for ${g.heldMs} ms, not removed`;
+    });
+  } finally {
+    clearInterval(tick); ghosts.stop(); outage.done();
+    try { bot?.leave?.(); } catch { /* */ }
+  }
+  sr.progress = 1;
+  void opts;
+}
+
+/** Two real browsers: the one that joined last (the higher id) is B and drops; the other (A) watches it ghosted. */
+async function dropLegTwoBrowsers(net, other, ghosts) {
+  const iAmB = String(net.id) > String(other);
+  const outage = makeOutage();
+  try {
+    if (iAmB) {
+      await sleep(3000); // A is watching by now
+      let d = null;
+      try { d = await dropSelf(net, outage); } catch (e) { sr.problems.push({ severity: 'bug', message: `drop: ${e?.message ?? e}` }); srEvent('fail', String(e?.message ?? e)); }
+      if (d) for (const [text, fn] of dropChecks(d)) await srCheck(text, async () => fn());
+    } else {
+      await srCheck("The other client's avatar is shown ghosted with 'away' while it is dropped, not removed", async () => {
+        const g = await seeGhost(other, ghosts, { dropAt: 1 });
+        if (!slot()?.poses?.[other]) throw new Error('the dropped player\'s avatar was removed');
+        return `"${g.name}" ghosted ${g.heldMs} ms, then back`;
+      });
+    }
+  } finally { outage.done(); }
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -1408,6 +1654,7 @@ api.start = async (id, options = {}) => {
       : id === 'nameplates' ? nameplates()
       : id === 'page' ? page()
       : id === 'reconnect' ? reconnect()
+      : id === 'drop-recover' ? dropRecover(options)
       : startScreen());
   } catch (e) { sr.problems.push({ severity: 'bug', message: `bot error: ${e?.message ?? e}` }); }
   finally { if (id === 'smooth' || id === 'crowd' || id === 'humanoid' || id === 'anim-sync' || id === 'phone' || id === 'nameplates') await smoothEnd(); }
