@@ -1,2 +1,1 @@
-- lesson: Recovery waits hide in the tail of Run() — a refused resume must not hit Backoff(); the fake-transport Delay hook records every wait, assert Delays is empty.
-- convention: HawkesNetClient reconnect tests use FakeHub in Tests/Editor/HawkesNetReconnectTests.cs (Down / TicketsDown / Refusal / RealDelay).
+- lesson: Scene audit scope — HawkesNetSceneAudit.IsStaticProp must skip everything under an avatar root (limbs are named Torso/Arm.*/Leg.*, not Player); a name check on the renderer alone misses them. Sparse checkout hides Packages/: run git sparse-checkout disable.

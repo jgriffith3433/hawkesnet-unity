@@ -49,6 +49,11 @@ namespace Hawkes
             if (r.GetComponentInParent<HawkesNetAvatars>() != null && r.GetComponent<MeshFilter>() == null) return false;
             // Skip skinned avatar meshes under the local/remote roots.
             if (r is SkinnedMeshRenderer) return false;
+            // Avatar body parts (Torso, Arm.*, Leg.* ...) are animated limbs under an avatar root, not arena dressing:
+            // every avatar root (local, remote, capsule stand-in) carries a CapsuleCollider; props use boxes.
+            if (r.GetComponentInParent<CapsuleCollider>() != null) return false;
+            for (var t = r.transform; t != null; t = t.parent)
+                if (t.name == "Humanoid" || t.name == "Player" || t.name.StartsWith("Remote", StringComparison.Ordinal)) return false;
             return r.GetComponent<MeshFilter>() != null;
         }
 
