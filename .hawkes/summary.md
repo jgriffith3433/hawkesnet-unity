@@ -1,15 +1,7 @@
-# Playtest scenario `page` now shows each page criterion
+Most of the recovery landed in 0.14.1 (#33). Auditing it against these criteria found real gaps, now fixed in `HawkesNetClient.cs`:
 
-**What was wrong.** Beta's playtest ran the default scenario (`smoke`), so the WebGL page criteria (early hook, deeper-path relocation, error card) were never played or logged. The existing `page` scenario also never checked the deeper-path relocation, and never reached the playable demo.
+- A refused resume (410 / 502 / close before hello) still waited a backoff before the fresh-ticket join; a drop out of a live session waited 500 ms before the resume; a failed ticket waited a flat 5 s (so a 5 s network drop could rejoin more than 3 s after the return); a node `draining` frame waited 150 ms. Now the first try after a live drop, the fresh ticket after a refused resume, and the post-drain ticket all go at once. Backoff (500 ms, 1 s, 2 s, then 2 s for a few tries, up to 15 s in a long outage) applies only between full failures. "reconnecting" is told once per outage.
+- Tests (`Tests/Editor/HawkesNetReconnectTests.cs`, fake transport): 5 s drop rejoins within 3 s of the return with one reconnecting / one online; 410, 502 and close-before-hello each end after one fresh ticket with no delay; backoff only between full failures; node restart (draining) asks for a ticket at once; a peer's away and back fire once each.
+- Version 0.14.2, CHANGELOG updated. Sample UI, setup window, README untouched.
 
-**What I changed** (feature untouched; test side only)
-- `DevTools/demo-web/unity-playtest.mjs`, scenario `page`:
-  - `hook-early` event: the inline stub's time (limit 1000 ms), logged first.
-  - new `deep-path` check/event: takes an address two folders below the page with a query string, resolves the template's own probe list (`./`, `../`, `../../demo-root.json`, must be relative) against it, asks each once, and checks the first that answers lands on this demo's index with the query string unchanged.
-  - `error-card` event now carries the reason shown; the card is cleared afterwards.
-  - new `demo-playing` check: Join with Enter, then W and D key presses move the avatar (real input, no teleport).
-- `.hawkes/scenario.txt`: `page` (about 30 s, no start point needed).
-
-**How I checked.** `node --check` on the script. Not played here: no browser or Unity build on this machine (Studio plays it on beta).
-**Caveat.** The deeper-path check simulates the relocation in the page (a static host has no real deeper page to open); it uses the template's own `tries` list, so it fails if the list changes.
-No conflicts.
+Checks: package.json parses. Unity compile and the test run were not done here (no Unity or dotnet on this machine); I read the C# by hand. No PlayMode tests: the client has no UnityEngine, so EditMode covers it. The existing `reconnect` playtest scenario (scenario.txt) still applies. Sparse checkout: no merge conflicts. GPU: none needed, estimate $0.

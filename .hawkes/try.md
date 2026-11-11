@@ -1,4 +1,4 @@
-1. Open the beta demo site root: the Hawkes Net loading screen shows at once, then the Join screen.
-2. Add `?playtest=page` to the address and watch the panel: hook-early, loading, demo-root, deep-path, error-card pass.
-3. Press Enter to join, then hold W and D: the avatar walks.
-4. Add `?failLoad=1` to see the plain error card.
+1. Open the demo on the beta site and wait until it shows you in the room.
+2. In another tab, join the same `?room=`; a second capsule appears.
+3. Turn your network off for about 5 seconds, then back on (browser dev tools, offline).
+4. Within a few seconds you should be back in the same room, with the other capsule still there.
