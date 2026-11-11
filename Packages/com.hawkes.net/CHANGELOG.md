@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.14.3 (2026-11-11)
+
+- **WebGL: `CreatePrimitive` grounds no longer lose their MeshCollider.** `Runtime/link.xml` keeps the collider classes
+  (`Collider`, `Box`, `Sphere`, `Capsule`, `Mesh`) of `UnityEngine.PhysicsModule` when Unity strips engine code; before,
+  a Plane's native `AddComponent<MeshCollider>` failed in a WebGL build with "Can't add component because class
+  'MeshCollider' doesn't exist!".
+- **The baked avatar's Motor is a real script.** `HawkesNetAvatarVisual.Motor` (a nested MonoBehaviour, which Unity
+  cannot save in a prefab) is now `HawkesNetAvatarMotor` in its own file, so the baked `HawkesNetAvatar` prefab no
+  longer logs "The referenced script on this Behaviour ... is missing!". Re-bake (Hawkes Net > Bake Avatars humanoid)
+  a prefab baked by an older version.
+
 ## 0.14.2 (2026-11-11)
 
 - **Recovery has no wait before a fresh ticket.** A drop out of a live session tries one resume at once; a refused

@@ -1,0 +1,16 @@
+<linker>
+  <!--
+    WebGL builds strip engine code. GameObject.CreatePrimitive adds its collider natively (Plane and Quad get a
+    MeshCollider, Cube a BoxCollider, Sphere a SphereCollider, Capsule a CapsuleCollider), and nothing in managed code
+    names MeshCollider, so the stripper dropped the class and a game's ground failed with "Can't add component because
+    class 'MeshCollider' doesn't exist!". Keep the collider classes: the avatars' ground probe, the nameplate occlusion
+    test and the scene audit all rely on them.
+  -->
+  <assembly fullname="UnityEngine.PhysicsModule">
+    <type fullname="UnityEngine.Collider" preserve="all"/>
+    <type fullname="UnityEngine.BoxCollider" preserve="all"/>
+    <type fullname="UnityEngine.SphereCollider" preserve="all"/>
+    <type fullname="UnityEngine.CapsuleCollider" preserve="all"/>
+    <type fullname="UnityEngine.MeshCollider" preserve="all"/>
+  </assembly>
+</linker>

@@ -180,8 +180,8 @@ namespace Hawkes.Editor
 
             HawkesNetAvatarVisual.FitFeetToGround(instance.transform);
 
-            var motor = instance.GetComponent<HawkesNetAvatarVisual.Motor>()
-                ?? instance.AddComponent<HawkesNetAvatarVisual.Motor>();
+            var motor = instance.GetComponent<HawkesNetAvatarMotor>()
+                ?? instance.AddComponent<HawkesNetAvatarMotor>();
             motor.Animator = animator;
             motor.WalkSpeed = walkSpeed;
             motor.RunSpeed = runSpeed;
