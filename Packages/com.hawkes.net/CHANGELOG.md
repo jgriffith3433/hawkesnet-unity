@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.14.1 (2026-11-11)
+
+- **Managed reconnect matches JS SDK 1.4.1+.** After an unexpected close the managed client (`HawkesNetClient`) tries
+  one resume with the hello's resume token; if that resume is refused (410 `resume_gone` / a proxy 502) or closes before
+  its hello, it drops the token and rejoins the same room with a fresh ticket. Backoff only between full failures (no
+  polling). A node `draining` control frame skips resume and asks for a ticket at once. Fake-transport EditMode tests
+  cover a blip (one resume) and a refused resume (one try, then a ticket).
+- **Room events:** `OnReconnecting`, `OnReconnected`, and `OnPeerBack` (alongside the existing `OnPeerAway` /
+  `OnStatus`). WebGL already surfaces the same status / away bridge events from the page SDK.
+- **Playtest:** scenario `reconnect` drops the page socket (blip) and poisons the resume token (node-restart path), and
+  asserts back-online timing plus at most one refused resume.
+
 ## 0.14.0 (2026-11-10)
 
 - **World-space nameplates** (`HawkesNetNamePlate`): floating names sit above the head bone (or 2.05 m on the capsule

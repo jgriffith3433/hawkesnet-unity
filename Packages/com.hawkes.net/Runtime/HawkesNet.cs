@@ -96,12 +96,18 @@ namespace Hawkes
         public string HostReason { get; internal set; } = "";
         /// <summary>A peer's page went into the background or came back (id, away).</summary>
         public event Action<string, bool> OnPeerAway;
+        /// <summary>A peer whose page was away is present again (id). Same moment as OnPeerAway(id, false).</summary>
+        public event Action<string> OnPeerBack;
         /// <summary>This page went into the background (after 2 s) or came back.</summary>
         public event Action<bool> OnAway;
         /// <summary>The room moved between peer to peer and the relay (new transport, why). Nothing to do: it is told.</summary>
         public event Action<string, string> OnTransport;
         /// <summary>The connection's status changed ("online", "reconnecting", "closed").</summary>
         public event Action<string> OnStatus;
+        /// <summary>The socket dropped and the SDK is trying one resume, then a fresh ticket if needed.</summary>
+        public event Action OnReconnecting;
+        /// <summary>Back online after OnReconnecting (a resume or a fresh ticket hello).</summary>
+        public event Action OnReconnected;
         /// <summary>A problem (code, detail): "full", "capped", "relay-lost", "ticket"... The join failed if Ready is false.</summary>
         public event Action<string, string> OnProblem;
         /// <summary>Any message (kind, data, from peer id): data is the JSON, or the text a SendText sent.</summary>
@@ -189,6 +195,7 @@ namespace Hawkes
                 case "away":
                     if (e.away) Away.Add(e.peer); else Away.Remove(e.peer);
                     OnPeerAway?.Invoke(e.peer, e.away);
+                    if (!e.away) OnPeerBack?.Invoke(e.peer);
                     break;
                 case "selfaway":
                     IsAway = e.away;
@@ -199,10 +206,15 @@ namespace Hawkes
                     OnTransport?.Invoke(e.transport, e.reason);
                     break;
                 case "status":
+                {
+                    var prev = Status;
                     Status = e.status;
                     if (!string.IsNullOrEmpty(e.transport)) Transport = e.transport;
+                    if (e.status == "reconnecting" && prev != "reconnecting") OnReconnecting?.Invoke();
+                    if (e.status == "online" && prev == "reconnecting") OnReconnected?.Invoke();
                     OnStatus?.Invoke(e.status);
                     break;
+                }
                 case "problem":
                 case "error":
                     // A refused or failed join closes the room: its reason first, then the status.
@@ -247,7 +259,7 @@ namespace Hawkes
     public static class HawkesNet
     {
         /// <summary>This package's version (what package.json says; keep the two in step on a release). The start screen shows it.</summary>
-        public const string PackageVersion = "0.14.0";
+        public const string PackageVersion = "0.14.1";
 
 #if UNITY_WEBGL && !UNITY_EDITOR
         [DllImport("__Internal")] static extern void HawkesNet_Join(int handle, string room, string optionsJson, string receiver);

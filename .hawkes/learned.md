@@ -1,0 +1,3 @@
+- lesson: managed resume matches JS 1.4.1 — keep `_resuming` until hello; a resume connect that throws or closes before hello must clear the token so the next try is a ticket, not another `r=`.
+- convention: fake transport for HawkesNetClient — inject `ConnectWire` / `AskTicket` / `Delay` on `HawkesNetClientOptions`; production still uses `ClientWebSocket` + HTTPS.
+- convention: reconnect playtest is Unity-only in `unity-playtest.mjs` (`reconnect`); poison `net.resume` then `net.ws.close()` to force the resume_gone path without restarting a node.
