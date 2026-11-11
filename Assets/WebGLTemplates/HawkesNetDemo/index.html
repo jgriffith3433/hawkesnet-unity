@@ -68,12 +68,13 @@
     }
   </style>
   <script>
-    // Phone playtest needs ?touch=1 in the address Unity reads (Application.absoluteURL is fixed at load),
+    // Phone / touch playtests need ?touch=1 in the address Unity reads (Application.absoluteURL is fixed at load),
     // so on-screen controls and the phone text box show even when the browser's pointer is fine.
     (function () {
       try {
         var u = new URL(location.href);
-        if (u.searchParams.get('playtest') === 'phone' && u.searchParams.get('touch') !== '1') {
+        var pt = u.searchParams.get('playtest') || '';
+        if ((pt === 'phone' || pt === 'camera-feel' || pt === 'drop-recover') && u.searchParams.get('touch') !== '1') {
           u.searchParams.set('touch', '1');
           history.replaceState(null, '', u.toString());
         }

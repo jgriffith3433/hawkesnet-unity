@@ -415,12 +415,14 @@ api.scenarios = () => [...baseScenarios().map((s) => (s.id === 'smoke'
   description: 'One browser (works at the phone size 390x844 with touch: it joins by tapping Join) plus the bot as a second player. The Unity player\'s network is cut for 5 s: the banner must say Reconnecting within 1 s (inside the safe area), then Back in the room after the network returns; recoveryMs must be under 2000 with the same name and colour (identityMatch 1); the bot must see the player away, never gone. Then the bot drops for 5 s: the Unity page must show its avatar ghosted with its name and away, not removed, and normal again after. Metrics: dropBannerMs, recoveryMs, backBannerMs, identityMatch, bannerInsideSafeArea, ghostShownMs, ghostHeldMs.' },
 { id: 'nameplates', title: 'World-space nameplates: never mirrored on a 360 orbit, readable on phone, hidden behind a wall', seconds: 75, tags: ['full', 'ui', 'quality'],
   description: 'Joins, opens a second player, waits for window.__hawkesNet.names: occlusion probe (hid behind a wall then shown), a dedicated probe-camera 360 orbit with mirroredFrames=0, every plate scale positive, and screenPx tall enough to read on a 390 px phone. Scenes Names-Meet / Names-Orbit / Names-Occlude for screenshots of unmirrored text.' },
+{ id: 'camera-feel', title: 'Damped follow camera: wall walk with 0 inside frames, turn cap 30°, idle recentre, phone touch orbit', seconds: 90, tags: ['full', 'feel', 'quality', 'phone'],
+  description: 'Joins, walks the avatar into each edge wall (real keys / touch stick), asserts window.__hawkesNet.camera.insideFrames=0 and scene.followInsideFrames=0, maxYawDelta/maxPitchDelta ≤ 30, then stands still ≥2 s until idleBehindOk (yaw within 5° of behind). On phone (390x844 touch) a one-finger drag on the right half changes yaw/pitch in the camera log without stutter. Scenes Cam-Wall / Cam-Idle / Cam-Touch.' },
 { id: 'page', title: 'Loading screen (progress, fade, phone fit), playtest hook while loading, demo-root.json, load error card', seconds: 30, tags: ['smoke', 'ui'],
   description: 'Logs one event per page criterion: hook-early (the inline stub was up within 1 s, before Unity finished), loading, demo-root, deep-path (a page two folders deeper, with a query string, finds demo-root.json by the relative probes ./ ../ ../../ once each and would land back here with the same query), error-card (a load failure shows the plain card with its reason), then demo-playing (Join with Enter and walk with W and D through real key presses).' },
 { id: 'reconnect', title: 'Reconnect: blip resumes in under 3 s; refused resume rejoins with one fresh ticket', seconds: 75, tags: ['full', 'netcode'],
   description: 'Joins from the start screen, closes the page socket (a 5 s network blip), and asserts status goes reconnecting then online within 3 s in the same room. Then poisons the resume token and closes again (node-restart / resume_gone path): at most one refused resume, then a fresh ticket, back online. Events: blip-recovered, resume-refused, ticket-rejoined. Package EditMode tests cover the managed client with a fake transport.' }];
 // The scenarios played here rather than by net-playtest.mjs: their own run, panel and report.
-const SIDE = ['start-screen', 'smooth', 'crowd', 'phone', 'page', 'humanoid', 'anim-sync', 'two-players', 'nameplates', 'reconnect', 'drop-recover'];
+const SIDE = ['start-screen', 'smooth', 'crowd', 'phone', 'page', 'humanoid', 'anim-sync', 'two-players', 'nameplates', 'camera-feel', 'reconnect', 'drop-recover'];
 
 let sr = null; // the start-screen run
 const r1 = (n) => Math.round(n * 10) / 10;
@@ -1634,6 +1636,152 @@ async function reconnect() {
   if (roomName) srEvent('log', `room ${roomName}`);
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// "camera-feel": damped follow cam — wall walk with 0 inside frames, ≤30°/frame turn, idle recentre, phone touch orbit.
+const cameraLog = () => globalThis.__hawkesNet?.camera ?? null;
+const cameraRing = () => globalThis.__hawkesNet?.cameraLog ?? [];
+async function cameraFeel() {
+  const phoneRun = Math.abs(innerWidth - PHONE_W) <= 16 && Math.abs(innerHeight - PHONE_H) <= 40;
+  if (phoneRun) ensurePhoneTouchQuery();
+  sr.state.scene = 'Cam-Wall';
+  srEvent('scene', 'Cam-Wall');
+  if (!await srCheck('Connected to Hawkes Net from the start screen', async () => {
+    if (phoneRun) {
+      await waitFor(startUp, 120000, 'Unity to show the start screen');
+      await waitFor(() => touchState()?.form?.join, 20000, 'the Join button');
+      await tapForm('join');
+      await waitFor(online, 40000, 'online after tap Join');
+    } else {
+      await joinFromStartScreen();
+    }
+    if (!online()) throw new Error('the room did not come online after joining');
+    await waitFor(() => cameraLog()?.frames > 0, 15000, 'window.__hawkesNet.camera to publish');
+    return phoneRun ? `online at ${innerWidth}x${innerHeight}` : 'online';
+  })) return;
+  sr.progress = 0.15;
+
+  // Walk into each edge wall (and along it) so the follow cam wants to sit in geometry; SphereCast must keep it clear.
+  if (!await srCheck('Wall-walking run: 0 camera-inside-geometry frames', async () => {
+    await waitFor(() => sent, 5000, 'the Unity player to send its place');
+    const before = cameraLog()?.insideFrames ?? 0;
+    const hold = async (keys, ms) => {
+      document.querySelector('canvas')?.focus?.();
+      for (const k of keys) key(k, true);
+      await sleep(ms);
+      for (const k of keys) key(k, false);
+      await sleep(120);
+    };
+    // Toward +X wall, then face back (camera swings through the wall side), same for -X / +Z / -Z.
+    if (phoneRun) {
+      // Touch stick: drag right, up, left, down toward the walls.
+      const stick = () => touchState()?.stick;
+      await waitFor(() => stick()?.r > 0, 10000, 'on-screen stick layout');
+      const s = stick();
+      await drag({ x: s.x, y: s.y }, 0.35, 0, 1600);
+      await drag({ x: s.x, y: s.y }, 0, -0.35, 1600);
+      await drag({ x: s.x, y: s.y }, -0.35, 0, 1600);
+      await drag({ x: s.x, y: s.y }, 0, 0.35, 1600);
+    } else {
+      await hold(['d'], 2200);
+      await hold(['a'], 400); // turn/walk so the camera passes the wall side
+      await hold(['w'], 2200);
+      await hold(['s'], 400);
+      await hold(['a'], 2200);
+      await hold(['d'], 400);
+      await hold(['s'], 2200);
+      await hold(['w'], 400);
+    }
+    await sleep(400);
+    const c = cameraLog();
+    const scene = sceneAudit();
+    const inside = c?.insideFrames ?? -1;
+    const follow = scene?.followInsideFrames ?? c?.followInsideFrames ?? -1;
+    sr.metrics.cameraInsideFrames = inside;
+    sr.metrics.followInsideFrames = follow;
+    sr.metrics.wallWalkDelta = inside - before;
+    srEvent('wall-walk', `insideFrames=${inside} followInsideFrames=${follow}`);
+    if (inside < 0) throw new Error('no camera log (window.__hawkesNet.camera)');
+    if (inside > before) throw new Error(`quality.camera-clip: follow cam inside geometry for ${inside - before} frames (total ${inside})`);
+    if (follow > 0) throw new Error(`play-mode audit followInsideFrames=${follow} (want 0 over the wall-walk run)`);
+    return `insideFrames=${inside} (Δ${inside - before}), followInsideFrames=${follow}`;
+  })) return;
+  sr.progress = 0.4;
+
+  if (!await srCheck('Camera log: no frame turns yaw or pitch more than 30 degrees', async () => {
+    const c = cameraLog();
+    const ring = cameraRing();
+    let maxY = c?.maxYawDelta ?? 0, maxP = c?.maxPitchDelta ?? 0;
+    for (const s of ring) {
+      if ((s.yawDelta ?? 0) > maxY) maxY = s.yawDelta;
+      if ((s.pitchDelta ?? 0) > maxP) maxP = s.pitchDelta;
+      if ((s.maxYawDelta ?? 0) > maxY) maxY = s.maxYawDelta;
+      if ((s.maxPitchDelta ?? 0) > maxP) maxP = s.maxPitchDelta;
+    }
+    sr.metrics.maxYawDelta = Math.round(maxY * 100) / 100;
+    sr.metrics.maxPitchDelta = Math.round(maxP * 100) / 100;
+    srEvent('turn-cap', `maxYawΔ=${maxY.toFixed(2)} maxPitchΔ=${maxP.toFixed(2)}`);
+    if (maxY > 30.01 || maxP > 30.01) throw new Error(`quality.camera-snap: max yaw Δ ${maxY.toFixed(2)}° pitch Δ ${maxP.toFixed(2)}° (cap 30)`);
+    return `maxYawΔ=${maxY.toFixed(2)} maxPitchΔ=${maxP.toFixed(2)}`;
+  })) return;
+  sr.progress = 0.55;
+
+  sr.state.scene = 'Cam-Idle';
+  srEvent('scene', 'Cam-Idle');
+  if (!await srCheck('Standing still 2 s: camera eases behind the avatar (within 5°)', async () => {
+    // Nudge orbit off-behind with a short right-side touch drag or a mouse-like key: walk to face one way first.
+    document.querySelector('canvas')?.focus?.();
+    if (phoneRun) {
+      // Drag on the right half to pull yaw off the behind line, then release and wait.
+      await drag({ x: 0.78, y: 0.45 }, 0.12, 0, 500);
+    } else {
+      // Walk a little to change facing, then stop; camera should recentre behind after 2 s.
+      key('d', true); await sleep(350); key('d', false);
+      await sleep(200);
+      key('w', true); await sleep(200); key('w', false);
+    }
+    await waitFor(() => cameraLog()?.idleBehindOk === true || (cameraLog()?.stillSeconds >= 2 && (cameraLog()?.behindErrorDeg ?? 99) <= 5), 8000,
+      () => `idle recentre (still=${cameraLog()?.stillSeconds} behindErr=${cameraLog()?.behindErrorDeg})`);
+    const c = cameraLog();
+    sr.metrics.behindErrorDeg = Math.round((c?.behindErrorDeg ?? 99) * 100) / 100;
+    sr.metrics.idleBehindOk = c?.idleBehindOk ? 1 : 0;
+    srEvent('idle-recentre', `behindErr=${c?.behindErrorDeg} idleBehindOk=${c?.idleBehindOk}`);
+    if ((c?.behindErrorDeg ?? 99) > 5.01 && !c?.idleBehindOk) throw new Error(`yaw still ${c?.behindErrorDeg}° off behind after idle`);
+    return `behindErr=${(c?.behindErrorDeg ?? 0).toFixed(1)}° still=${(c?.stillSeconds ?? 0).toFixed(1)}s`;
+  })) return;
+  sr.progress = 0.75;
+
+  sr.state.scene = 'Cam-Touch';
+  srEvent('scene', 'Cam-Touch');
+  // Phone criterion: one-finger drag changes yaw/pitch. On desktop we still exercise a right-half touch drag when Touch exists.
+  if (!await srCheck('One-finger drag changes yaw and pitch in the camera log', async () => {
+    if (typeof Touch !== 'function' || typeof TouchEvent !== 'function') {
+      if (phoneRun) throw new Error('phone run needs Touch/TouchEvent');
+      srEvent('touch-orbit-skipped', 'no Touch API on this desktop');
+      return 'desktop without Touch: skipped (phone run covers it)';
+    }
+    await waitFor(() => cameraLog()?.frames > 5, 5000, 'camera log samples');
+    const before = { yaw: cameraLog().yaw, pitch: cameraLog().pitch, frames: cameraLog().frames };
+    // Right-half drag (left half is the move stick).
+    await drag({ x: 0.78, y: 0.42 }, 0.14, -0.1, 700);
+    await sleep(200);
+    const after = cameraLog();
+    const dYaw = Math.abs(wrapDeg(after.yaw - before.yaw));
+    const dPitch = Math.abs(after.pitch - before.pitch);
+    sr.metrics.touchOrbitYawDelta = Math.round(dYaw * 100) / 100;
+    sr.metrics.touchOrbitPitchDelta = Math.round(dPitch * 100) / 100;
+    sr.metrics.touchOrbit = after.touchOrbit ? 1 : 0;
+    // Stutter check: no single-frame yaw/pitch jump over 30 during the drag window.
+    const ring = cameraRing().filter((s) => (s.frames ?? 0) >= before.frames);
+    const jump = Math.max(0, ...ring.map((s) => Math.max(s.yawDelta || 0, s.pitchDelta || 0)));
+    sr.metrics.touchOrbitMaxJump = Math.round(jump * 100) / 100;
+    srEvent('touch-orbit', `Δyaw=${dYaw.toFixed(1)} Δpitch=${dPitch.toFixed(1)} maxJump=${jump.toFixed(2)}`);
+    if (dYaw < 2 && dPitch < 2) throw new Error(`drag did not change yaw/pitch (Δyaw ${dYaw.toFixed(2)}, Δpitch ${dPitch.toFixed(2)})`);
+    if (jump > 30.01) throw new Error(`camera stuttered: ${jump.toFixed(2)}° in one frame during the drag`);
+    return `Δyaw=${dYaw.toFixed(1)} Δpitch=${dPitch.toFixed(1)}, maxJump=${jump.toFixed(2)}`;
+  })) return;
+  sr.progress = 1;
+}
+
 api.start = async (id, options = {}) => {
   if (!SIDE.includes(id)) {
     try { await joinFromStartScreen(); } catch (e) { startLog.push({ at: performance.now(), text: `bot: ${e?.message ?? e}` }); globalThis.__hawkesJoinProblem = e?.message ?? String(e); }
@@ -1652,12 +1800,13 @@ api.start = async (id, options = {}) => {
       : id === 'two-players' ? twoPlayersUnity()
       : id === 'phone' ? phone()
       : id === 'nameplates' ? nameplates()
+      : id === 'camera-feel' ? cameraFeel()
       : id === 'page' ? page()
       : id === 'reconnect' ? reconnect()
       : id === 'drop-recover' ? dropRecover(options)
       : startScreen());
   } catch (e) { sr.problems.push({ severity: 'bug', message: `bot error: ${e?.message ?? e}` }); }
-  finally { if (id === 'smooth' || id === 'crowd' || id === 'humanoid' || id === 'anim-sync' || id === 'phone' || id === 'nameplates') await smoothEnd(); }
+  finally { if (id === 'smooth' || id === 'crowd' || id === 'humanoid' || id === 'anim-sync' || id === 'phone' || id === 'nameplates' || id === 'camera-feel') await smoothEnd(); }
   if (mine !== sr) return;
   mine.done = true; mine.seconds = srNow();
   mine.state.status = mine.lines.length && mine.lines.every((l) => l.ok) ? 'won' : 'lost';
