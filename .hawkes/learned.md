@@ -1,4 +1,1 @@
-- convention: Follow camera bridge — `HawkesNet.ShowedCamera` → `window.__hawkesNet.camera` (+ `.cameraLog` ring); jslib also mirrors `followInsideFrames` onto `window.__hawkesNet.scene` so the play-mode audit stays live after the orbit finishes.
-- lesson: Sparse checkout hides Packages/ — run `git sparse-checkout disable` before editing the UPM package (same trap as scene-audit agents).
-- convention: Sample/demo camera — never parent the gameplay cam to the avatar; `HawkesNetFollowCamera.Attach` unparents and owns LateUpdate (scene-audit / nameplate probes stay on dedicated disabled cameras).
-- canon: Arena camera — damped third-person follow with SphereCast wall pull-in, 30°/frame turn cap, and idle recentre behind the avatar after 2 s still.
+- lesson: sparse checkout — this worktree hides DevTools/ by default; run git sparse-checkout disable to edit unity-playtest.mjs

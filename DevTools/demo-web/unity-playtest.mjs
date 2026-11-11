@@ -1153,6 +1153,7 @@ async function dropSelf(net, outage) {
   const box = { l: cv.left + r.x * cv.width, t: cv.top + r.y * cv.height, r: cv.left + (r.x + r.w) * cv.width, b: cv.top + (r.y + r.h) * cv.height };
   const inside = box.l >= ins.left - 0.5 && box.t >= ins.top - 0.5 && box.r <= innerWidth - ins.right + 0.5 && box.b <= innerHeight - ins.bottom + 0.5;
   Object.assign(sr.metrics, { bannerBox: `${Math.round(box.l)},${Math.round(box.t)} ${Math.round(box.r - box.l)}x${Math.round(box.b - box.t)}`, bannerInsideSafeArea: inside ? 1 : 0, viewport: `${innerWidth}x${innerHeight}` });
+  srEvent('safe-area', `bannerInsideSafeArea ${inside ? 'true' : 'false'}: banner ${sr.metrics.bannerBox} in ${sr.metrics.viewport}`);
   const left = DROP_MS - (performance.now() - t0);
   if (left > 0) await sleep(left);
   if (net.status === 'online' && net.ws?.readyState === 1) throw new Error('the connection came back while the network was meant to be down');
@@ -1167,7 +1168,7 @@ async function dropSelf(net, outage) {
   const me1 = dropState().me ?? {}, color1 = sentExtra?.c ?? me1.color ?? '';
   const same = me1.name === me0.name && me1.color === me0.color && color1 === color0;
   Object.assign(sr.metrics, { recoveryMs, backBannerMs: backMs, identityMatch: same ? 1 : 0, peerSame: net.id === id0 ? 1 : 0 });
-  srEvent('recovered', `${recoveryMs} ms, name "${me1.name}" colour ${me1.color} (${same ? 'same as before' : `was "${me0.name}" ${me0.color}`})`);
+  srEvent('recovered', `recoveryMs ${recoveryMs}, identityMatch ${same ? 'true' : 'false'}: ${recoveryMs} ms, name "${me1.name}" colour ${me1.color} (${same ? 'same as before' : `was "${me0.name}" ${me0.color}`})`);
   return { recoveryMs, backMs, same, inside, me0, me1, bannerMs };
 }
 
