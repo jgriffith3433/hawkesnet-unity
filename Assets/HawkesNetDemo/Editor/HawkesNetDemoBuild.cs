@@ -84,6 +84,12 @@ namespace Hawkes.Demo.Editor
             PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Disabled;
             PlayerSettings.WebGL.decompressionFallback = false;
             PlayerSettings.runInBackground = true;
+            // Keep the build inside the cloud builder's memory limit (demo 50 ended with "memory limit was reached"):
+            // smaller IL2CPP output, no debug symbols, no full exception metadata, more stripping.
+            EditorUserBuildSettings.il2CppCodeGeneration = UnityEditor.Build.Il2CppCodeGeneration.OptimizeSize;
+            PlayerSettings.WebGL.debugSymbolMode = WebGLDebugSymbolMode.Off;
+            PlayerSettings.WebGL.exceptionSupport = WebGLExceptionSupport.ExplicitlyThrownExceptionsOnly;
+            PlayerSettings.SetManagedStrippingLevel(UnityEditor.Build.NamedBuildTarget.WebGL, ManagedStrippingLevel.Medium);
             Directory.CreateDirectory(outDir);
             Debug.Log("[Hawkes] building the Hawkes Net demo to WebGL: " + outDir);
             var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
