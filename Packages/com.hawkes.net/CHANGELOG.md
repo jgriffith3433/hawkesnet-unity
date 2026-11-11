@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.14.4 (2026-11-11)
+
+- **Scene audit no longer calls avatar body parts "floating".** `HawkesNetSceneAudit.IsStaticProp` only skipped a
+  renderer whose own object was named Player/Remote*, so the baked humanoid's Torso, Arm.*, Leg.* and Shoulder.* meshes
+  were checked as arena props and failed ground contact. Anything under an avatar root (CapsuleCollider, "Humanoid",
+  Player, Remote*) is now skipped; real props are still audited with the same 2 cm tolerance.
+
 ## 0.14.3 (2026-11-11)
 
 - **WebGL: `CreatePrimitive` grounds no longer lose their MeshCollider.** `Runtime/link.xml` keeps the collider classes
