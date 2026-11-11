@@ -414,7 +414,7 @@ api.scenarios = () => [...baseScenarios().map((s) => (s.id === 'smoke'
 { id: 'nameplates', title: 'World-space nameplates: never mirrored on a 360 orbit, readable on phone, hidden behind a wall', seconds: 75, tags: ['full', 'ui', 'quality'],
   description: 'Joins, opens a second player, waits for window.__hawkesNet.names: occlusion probe (hid behind a wall then shown), a dedicated probe-camera 360 orbit with mirroredFrames=0, every plate scale positive, and screenPx tall enough to read on a 390 px phone. Scenes Names-Meet / Names-Orbit / Names-Occlude for screenshots of unmirrored text.' },
 { id: 'page', title: 'Loading screen (progress, fade, phone fit), playtest hook while loading, demo-root.json, load error card', seconds: 30, tags: ['smoke', 'ui'],
-  description: 'Checks the inline stub put window.hawkesPlaytest up before Unity finished (within 1 s of page start), that ./demo-root.json answers so a deeper path can relocate here, and that a load failure shows the plain error card (via the page helper, same card ?failLoad=1 uses).' },
+  description: 'Logs one event per page criterion: hook-early (the inline stub was up within 1 s, before Unity finished), loading, demo-root, deep-path (a page two folders deeper, with a query string, finds demo-root.json by the relative probes ./ ../ ../../ once each and would land back here with the same query), error-card (a load failure shows the plain card with its reason), then demo-playing (Join with Enter and walk with W and D through real key presses).' },
 { id: 'reconnect', title: 'Reconnect: blip resumes in under 3 s; refused resume rejoins with one fresh ticket', seconds: 75, tags: ['full', 'netcode'],
   description: 'Joins from the start screen, closes the page socket (a 5 s network blip), and asserts status goes reconnecting then online within 3 s in the same room. Then poisons the resume token and closes again (node-restart / resume_gone path): at most one refused resume, then a fresh ticket, back online. Events: blip-recovered, resume-refused, ticket-rejoined. Package EditMode tests cover the managed client with a fake transport.' }];
 // The scenarios played here rather than by net-playtest.mjs: their own run, panel and report.
@@ -1210,7 +1210,7 @@ async function page() {
     const stub = globalThis.__hawkesPlaytestStub;
     if (!stub || !stub._stub) throw new Error('window.__hawkesPlaytestStub is missing');
     sr.metrics.stubAtMs = Math.round(at);
-    srEvent('hook-early', `${Math.round(at)} ms`);
+    srEvent('hook-early', `window.hawkesPlaytest stub up ${Math.round(at)} ms after page start (limit 1000), before Unity finished loading`);
     return `stub at ${Math.round(at)} ms`;
   });
   await srCheck('The branded loading screen filled its bar with real loader progress and faded out', async () => {
@@ -1249,7 +1249,29 @@ async function page() {
     srEvent('demo-root', 'hawkes-net-unity');
     return 'demo-root.json ok; ./ is the demo root';
   });
-  sr.progress = 0.7;
+  sr.progress = 0.5;
+  await srCheck('A page opened deeper under the site root finds demo-root.json and lands back on the demo with the same query string', async () => {
+    const helper = globalThis.__hawkesDemoRoot;
+    if (!Array.isArray(helper?.tries) || helper.tries.join() !== './demo-root.json,../demo-root.json,../../demo-root.json') throw new Error(`probe list is ${JSON.stringify(helper?.tries)}`);
+    if (helper.tries.some((t) => /^(\/|[a-z]+:)/i.test(t))) throw new Error('a probe path is not relative');
+    // The deeper address Studio hit, two folders below this page, with a query string. Each probe is resolved against it
+    // the way the browser would and asked once; the first that answers decides where the page replaces itself.
+    const deep = new URL('jgriffith3433/hawkesnet-unity/index.html?room=pt-deep&seed=7', location.href);
+    let landed = null; const asked = [];
+    for (const t of helper.tries) {
+      const u = new URL(t, deep);
+      asked.push(u.pathname);
+      let res = null; try { res = await fetch(u.href, { cache: 'no-store' }); } catch { /* not there */ }
+      if (res?.ok && (await res.json().catch(() => ({})))?.demo === 'hawkes-net-unity') { landed = new URL(t.replace(/demo-root\.json$/, '') + 'index.html', deep); landed.search = deep.search; break; }
+    }
+    if (!landed) throw new Error(`none of ${asked.join(', ')} answered`);
+    const want = new URL('index.html', location.href);
+    if (landed.pathname !== want.pathname) throw new Error(`would land on ${landed.pathname}, the demo is ${want.pathname}`);
+    if (landed.search !== '?room=pt-deep&seed=7') throw new Error(`the query string became "${landed.search}"`);
+    srEvent('deep-path', `${deep.pathname.replace(want.pathname.replace(/index\.html$/, ''), './')} -> ${landed.pathname}${landed.search} (probes ${asked.length}, once each)`);
+    return `lands on ${landed.pathname}${landed.search} after ${asked.length} probe(s)`;
+  });
+  sr.progress = 0.6;
   await srCheck('A load failure shows the plain error card instead of a blank page', async () => {
     const helper = globalThis.__hawkesDemoRoot;
     const card = document.getElementById('hawkes-error-card');
@@ -1258,7 +1280,7 @@ async function page() {
     await waitFor(() => card.classList.contains('show'), 2000, 'the error card to show');
     const detail = document.getElementById('hawkes-error-detail')?.textContent || '';
     if (!/simulated load failure/.test(detail)) throw new Error(`error detail was "${detail}"`);
-    srEvent('error-card', detail);
+    srEvent('error-card', `plain card shown with the reason: ${detail}`);
     // Put the demo back so the footage ends on the game, not the card.
     card.classList.remove('show');
     const container = document.getElementById('unity-container');
@@ -1266,6 +1288,20 @@ async function page() {
     const loading = document.getElementById('unity-loading-bar');
     if (loading) loading.hidden = true;
     return 'error card shown, then cleared';
+  });
+  sr.progress = 0.85;
+  // The demo itself, reached through real input: Enter on the start screen, then the keyboard walks the avatar.
+  await srCheck('The WebGL demo is playable: Join with Enter, then W and D move the avatar', async () => {
+    await joinFromStartScreen();
+    if (!online()) throw new Error('the room did not come online after pressing Join');
+    await waitFor(() => sent, 10000, 'the avatar to send its place');
+    const p0 = sent.slice();
+    document.querySelector('canvas')?.focus?.();
+    for (const k of ['d', 'w']) { key(k, true); await sleep(900); key(k, false); }
+    const d = Math.hypot(sent[0] - p0[0], sent[2] - p0[2]);
+    if (d < 0.5) throw new Error(`moved only ${d.toFixed(2)} m with real key presses`);
+    srEvent('demo-playing', `joined, walked ${d.toFixed(1)} m`);
+    return `online, walked ${d.toFixed(1)} m`;
   });
   sr.progress = 1;
 }
