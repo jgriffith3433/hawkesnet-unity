@@ -413,16 +413,18 @@ api.scenarios = () => [...baseScenarios().map((s) => (s.id === 'smoke'
   description: 'Two real browsers on one ?room= meet, move and trade messages (same as the shared net-playtest two-players), then each samples window.__hawkesNet.anim every frame: stuck-airborne, state/motion mismatch and foot-slide fail above thresholds on local and remote characters. Last leg: the later browser (B) loses its network for 5 s: it must show Reconnecting within 1 s and Back in the room after, report recoveryMs under 2000 with the same name and colour (identityMatch 1); the other browser (A) must show B ghosted (faded, tagged away) rather than gone.' },
 { id: 'drop-recover', title: 'Drop and recover: a 5 s network drop shows Reconnecting then Back in the room, same name and colour, others see the player away not gone', seconds: 90, tags: ['full', 'multiplayer', 'netcode', 'phone'],
   description: 'One browser (works at the phone size 390x844 with touch: it joins by tapping Join) plus the bot as a second player. The Unity player\'s network is cut for 5 s: the banner must say Reconnecting within 1 s (inside the safe area), then Back in the room after the network returns; recoveryMs must be under 2000 with the same name and colour (identityMatch 1); the bot must see the player away, never gone. Then the bot drops for 5 s: the Unity page must show its avatar ghosted with its name and away, not removed, and normal again after. Metrics: dropBannerMs, recoveryMs, backBannerMs, identityMatch, bannerInsideSafeArea, ghostShownMs, ghostHeldMs.' },
+{ id: 'reconnect', title: 'Reconnect (same scenario as drop-recover): a 5 s network drop shows Reconnecting then Back in the room, same name and colour, others see the player away not gone', seconds: 90, tags: ['full', 'multiplayer', 'netcode', 'phone'],
+  description: 'One browser (works at the phone size 390x844 with touch: it joins by tapping Join) plus the bot as a second player. The Unity player\'s network is cut for 5 s: the banner must say Reconnecting within 1 s (inside the safe area), then Back in the room after the network returns; recoveryMs must be under 2000 with the same name and colour (identityMatch 1); the bot must see the player away, never gone. Then the bot drops for 5 s: the Unity page must show its avatar ghosted with its name and away, not removed, and normal again after. Metrics: dropBannerMs, recoveryMs, backBannerMs, identityMatch, bannerInsideSafeArea, ghostShownMs, ghostHeldMs.' },
 { id: 'nameplates', title: 'World-space nameplates: never mirrored on a 360 orbit, readable on phone, hidden behind a wall', seconds: 75, tags: ['full', 'ui', 'quality'],
   description: 'Joins, opens a second player, waits for window.__hawkesNet.names: occlusion probe (hid behind a wall then shown), a dedicated probe-camera 360 orbit with mirroredFrames=0, every plate scale positive, and screenPx tall enough to read on a 390 px phone. Scenes Names-Meet / Names-Orbit / Names-Occlude for screenshots of unmirrored text.' },
 { id: 'camera-feel', title: 'Damped follow camera: wall walk with 0 inside frames, turn cap 30°, idle recentre, phone touch orbit', seconds: 90, tags: ['full', 'feel', 'quality', 'phone'],
   description: 'Joins, walks the avatar into each edge wall (real keys / touch stick), asserts window.__hawkesNet.camera.insideFrames=0 and scene.followInsideFrames=0, maxYawDelta/maxPitchDelta ≤ 30, then stands still ≥2 s until idleBehindOk (yaw within 5° of behind). On phone (390x844 touch) a one-finger drag on the right half changes yaw/pitch in the camera log without stutter. Scenes Cam-Wall / Cam-Idle / Cam-Touch.' },
 { id: 'page', title: 'Loading screen (progress, fade, phone fit), playtest hook while loading, demo-root.json, load error card', seconds: 30, tags: ['smoke', 'ui'],
   description: 'Logs one event per page criterion: hook-early (the inline stub was up within 1 s, before Unity finished), loading, demo-root, deep-path (a page two folders deeper, with a query string, finds demo-root.json by the relative probes ./ ../ ../../ once each and would land back here with the same query), error-card (a load failure shows the plain card with its reason), then demo-playing (Join with Enter and walk with W and D through real key presses).' },
-{ id: 'reconnect', title: 'Reconnect: blip resumes in under 3 s; refused resume rejoins with one fresh ticket', seconds: 75, tags: ['full', 'netcode'],
+{ id: 'reconnect-blip', title: 'Reconnect blip: blip resumes in under 3 s; refused resume rejoins with one fresh ticket', seconds: 75, tags: ['full', 'netcode'],
   description: 'Joins from the start screen, closes the page socket (a 5 s network blip), and asserts status goes reconnecting then online within 3 s in the same room. Then poisons the resume token and closes again (node-restart / resume_gone path): at most one refused resume, then a fresh ticket, back online. Events: blip-recovered, resume-refused, ticket-rejoined. Package EditMode tests cover the managed client with a fake transport.' }];
 // The scenarios played here rather than by net-playtest.mjs: their own run, panel and report.
-const SIDE = ['start-screen', 'smooth', 'crowd', 'phone', 'page', 'humanoid', 'anim-sync', 'two-players', 'nameplates', 'camera-feel', 'reconnect', 'drop-recover'];
+const SIDE = ['start-screen', 'smooth', 'crowd', 'phone', 'page', 'humanoid', 'anim-sync', 'two-players', 'nameplates', 'camera-feel', 'reconnect-blip', 'reconnect', 'drop-recover'];
 
 let sr = null; // the start-screen run
 const r1 = (n) => Math.round(n * 10) / 10;
@@ -1802,8 +1804,8 @@ api.start = async (id, options = {}) => {
       : id === 'nameplates' ? nameplates()
       : id === 'camera-feel' ? cameraFeel()
       : id === 'page' ? page()
-      : id === 'reconnect' ? reconnect()
-      : id === 'drop-recover' ? dropRecover(options)
+      : id === 'reconnect-blip' ? reconnect()
+      : id === 'reconnect' || id === 'drop-recover' ? dropRecover(options)
       : startScreen());
   } catch (e) { sr.problems.push({ severity: 'bug', message: `bot error: ${e?.message ?? e}` }); }
   finally { if (id === 'smooth' || id === 'crowd' || id === 'humanoid' || id === 'anim-sync' || id === 'phone' || id === 'nameplates' || id === 'camera-feel') await smoothEnd(); }
