@@ -23,14 +23,6 @@ namespace Hawkes
         /// <summary>How long a land clip may run before returning to locomotion (quality rule 5: ≤ 0.3 s).</summary>
         public const float LandMaxSeconds = 0.3f;
 
-        /// <summary>Motor on the baked prefab: Animator plus the walk/run thresholds the controller was built with.</summary>
-        public sealed class Motor : MonoBehaviour
-        {
-            public Animator Animator;
-            public float WalkSpeed = 1.2f;
-            public float RunSpeed = 3.5f;
-        }
-
         /// <summary>
         /// An empty root (what HawkesNetAvatars moves) with a "Body" child that holds the humanoid (or capsule)
         /// and a CapsuleCollider on the root for soft push-apart / WebGL physics stripping.
@@ -51,7 +43,7 @@ namespace Hawkes
                 visual.transform.localRotation = Quaternion.identity;
                 FitFeetToGround(visual.transform);
                 SizeCollider(root.gameObject, visual.transform);
-                var motor = visual.GetComponent<Motor>() ?? visual.GetComponentInChildren<Motor>();
+                var motor = visual.GetComponent<HawkesNetAvatarMotor>() ?? visual.GetComponentInChildren<HawkesNetAvatarMotor>();
                 if (motor != null)
                 {
                     if (motor.WalkSpeed > 0.01f) WalkNominal = motor.WalkSpeed;
@@ -89,7 +81,7 @@ namespace Hawkes
         public static Animator GetAnimator(Transform root)
         {
             if (!root) return null;
-            var motor = root.GetComponentInChildren<Motor>();
+            var motor = root.GetComponentInChildren<HawkesNetAvatarMotor>();
             if (motor != null && motor.Animator) return motor.Animator;
             return root.GetComponentInChildren<Animator>();
         }
