@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Avatars sample: a dropped player is shown, not hidden.** The sample listens to `OnReconnecting` / `OnReconnected` (and
+  a lost room the lobby is joining again): a small banner inside `Screen.safeArea` says "Reconnecting…", then "Back in
+  the room" for 2.5 s; the local name and colour are never touched. A remote the room has marked away (`room.Away`: its
+  connection dropped, for the room's 15 s grace) stays as a faded ghost (translucent where the shader allows, always washed
+  toward grey) with "(away)" on its nameplate. The sample tells the page through `HawkesNet.ShowedTouch`
+  (`window.__hawkesNet.touch.banner / .link / .me / .ghosts`). No new package API. The demo's `drop-recover` scenario and
+  `two-players` drop leg play it (DevTools/demo-web).
+
 ## 0.14.5 (2026-11-11)
 
 - **Demo build: no more Unity segfault (exit 139).** The demo build no longer adds `Sprites/Default` and `GUI/Text Shader`
