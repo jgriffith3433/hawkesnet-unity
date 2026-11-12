@@ -86,7 +86,9 @@ namespace Hawkes.Demo.Editor
             PlayerSettings.runInBackground = true;
             // Keep the build inside the cloud builder's memory limit (demo 50 ended with "memory limit was reached"):
             // smaller IL2CPP output, no debug symbols, no full exception metadata, more stripping.
-            EditorUserBuildSettings.il2CppCodeGeneration = UnityEditor.Build.Il2CppCodeGeneration.OptimizeSize;
+            PlayerSettings.SetIl2CppCodeGeneration(
+                UnityEditor.Build.NamedBuildTarget.WebGL,
+                UnityEditor.Build.Il2CppCodeGeneration.OptimizeSize);
             PlayerSettings.WebGL.debugSymbolMode = WebGLDebugSymbolMode.Off;
             PlayerSettings.WebGL.exceptionSupport = WebGLExceptionSupport.ExplicitlyThrownExceptionsOnly;
             PlayerSettings.SetManagedStrippingLevel(UnityEditor.Build.NamedBuildTarget.WebGL, ManagedStrippingLevel.Medium);
